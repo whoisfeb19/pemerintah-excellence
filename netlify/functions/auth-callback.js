@@ -84,7 +84,7 @@ exports.handler = async (event) => {
 
         let userPangkat = "Unknown";
         let userDivisi = "-";
-        const adminRoleId = "1444910578266148897";
+        const adminRoleId = "1492400977012068363";
         let isAdmin = roles.includes(adminRoleId);
 
         roles.forEach(r => {
