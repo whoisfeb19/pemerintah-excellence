@@ -1,10 +1,14 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+// Inisialisasi Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 exports.handler = async (event) => {
-    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
+    // Hanya izinkan method POST
+    if (event.httpMethod !== "POST") {
+        return { statusCode: 405, body: "Method Not Allowed" };
+    }
 
     const body = JSON.parse(event.body);
     const reports = Array.isArray(body) ? body : [body];
@@ -44,6 +48,7 @@ exports.handler = async (event) => {
     };
 
     try {
+        // --- 1. VERIFIKASI MEMBER DISCORD ---
         const memberRes = await axios.get(
             `https://discord.com/api/v10/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordId}`,
             { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } }
@@ -52,11 +57,13 @@ exports.handler = async (event) => {
         const { roles, nick, user: discordUser } = memberRes.data;
         const REQUIRED_ROLE_ID = process.env.DISCORD_REQUIRED_ROLE_ID;
 
+        // Jika role wajib hilang, hapus dari database dan tolak akses
         if (!roles.includes(REQUIRED_ROLE_ID)) {
             await supabase.from('users_master').delete().eq('discord_id', discordId);
             return { statusCode: 403, body: JSON.stringify({ message: "KICKED" }) };
         }
 
+        // Ambil Pangkat (Priority Based)
         let freshPangkat = "Unknown";
         for (const roleId of PANGKAT_PRIORITY) {
             if (roles.includes(roleId)) {
@@ -65,6 +72,7 @@ exports.handler = async (event) => {
             }
         }
 
+        // Ambil Divisi
         let freshDivisi = "-";
         roles.forEach(r => {
             if (DIVISI_MAP[r]) freshDivisi = DIVISI_MAP[r];
@@ -72,30 +80,32 @@ exports.handler = async (event) => {
 
         const freshName = nick || discordUser.global_name || discordUser.username;
 
-        // 1. UPDATE TABEL MASTER (Identitas Utama)
+        // --- 2. SINKRONISASI IDENTITAS DI DATABASE ---
+        // Update tabel master
         await supabase.from('users_master').update({
             nama_anggota: freshName,
             pangkat: freshPangkat,
             divisi: freshDivisi
         }).eq('discord_id', discordId);
 
-        // 2. UPDATE SEMUA DATA LAMA DI TABEL ABSENSI (Sinkronisasi Massal)
-        // Bagian ini akan mencari semua baris dengan discord_id yang sama dan mengubah identitasnya
+        // Update identitas pada seluruh record absensi lama agar seragam
         await supabase.from('absensi_sasg').update({
             nama_anggota: freshName,
             pangkat: freshPangkat,
             divisi: freshDivisi
         }).eq('discord_id', discordId);
 
-        // 3. INSERT DATA ABSENSI BARU
+        // --- 3. INSERT DATA ABSENSI BARU (FIXED MAPPING) ---
         const { error: insertError } = await supabase.from('absensi_sasg').insert(
             reports.map(r => ({
                 discord_id: discordId,
                 nama_anggota: freshName,
                 pangkat: freshPangkat,
                 divisi: freshDivisi,
-                jam_duty: r.jam_duty,
-                kegiatan: r.kegiatan,
+                // Pemetaan yang disesuaikan dengan dashboard.js
+                tipe_absen: r.tipe_absen,  // HADIR / IZIN / CUTI
+                jam_duty: r.jam_duty,      // HH:mm - HH:mm atau NULL
+                alasan: r.alasan,          // Input dari field kegiatan
                 bukti_foto: r.bukti_foto,
                 created_at: r.created_at || new Date().toISOString()
             }))
@@ -112,11 +122,17 @@ exports.handler = async (event) => {
         };
 
     } catch (err) {
-        console.error(err);
+        console.error("Error in submit-absensi:", err);
+        
         if (err.response && err.response.status === 404) {
+            // User tidak ditemukan di server Discord
             await supabase.from('users_master').delete().eq('discord_id', discordId);
             return { statusCode: 403, body: JSON.stringify({ message: "KICKED" }) };
         }
-        return { statusCode: 500, body: JSON.stringify({ message: "SERVER ERROR" }) };
+        
+        return { 
+            statusCode: 500, 
+            body: JSON.stringify({ message: "SERVER ERROR", details: err.message }) 
+        };
     }
 };
