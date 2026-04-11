@@ -10,7 +10,7 @@
     }
     checkAuth();
 
-    const _supabase = window.supabase.createClient("https://urclmvdkfkfwvdascobs.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyY2xtdmRrZmtmd3ZkYXNjb2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDkzMjQsImV4cCI6MjA5MTM4NTMyNH0.FE8ynCm5Pfg861wpG1rslSCLSNUnXSwyEIVbHiqajT4");
+    const _supabase = window.supabase.createClient("https://knldblqwaumehhwaodmn.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtubGRibHF3YXVtZWhod2FvZG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4OTIwNzIsImV4cCI6MjA5MTQ2ODA3Mn0.EdMpVA8E4Vax8FCwJcKAJx-f-d80ysGWRsGLSAS_q3I");
 
     let currentWeekOffset = 0;
     let userWeekly = {}; 
