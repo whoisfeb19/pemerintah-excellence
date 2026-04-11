@@ -1,5 +1,5 @@
 
-    const _supabase = window.supabase.createClient("https://urclmvdkfkfwvdascobs.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyY2xtdmRrZmtmd3ZkYXNjb2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDkzMjQsImV4cCI6MjA5MTM4NTMyNH0.FE8ynCm5Pfg861wpG1rslSCLSNUnXSwyEIVbHiqajT4");
+    const _supabase = window.supabase.createClient("https://knldblqwaumehhwaodmn.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtubGRibHF3YXVtZWhod2FvZG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4OTIwNzIsImV4cCI6MjA5MTQ2ODA3Mn0.EdMpVA8E4Vax8FCwJcKAJx-f-d80ysGWRsGLSAS_q3I");
 
     window.onload = async () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -59,7 +59,7 @@
     try {
         // Ambil data dari awal minggu sampai sekarang
         const { data: logs } = await _supabase
-            .from('absensi_sapd')
+            .from('absensi_sasg')
             .select('jam_duty, created_at')
             .eq('discord_id', discId)
             .gte('created_at', monday.toISOString());
