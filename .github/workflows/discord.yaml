@@ -1,0 +1,46 @@
+name: Kirim Notif ke Discord
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # <--- WAJIB: supaya git log bisa jalan!
+      - name: Kirim pesan ke Discord mirip GitHub log
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          AUTHOR_NAME="$(git log -1 --pretty=format:'%an')"
+          AUTHOR_AVATAR="$(curl -s https://api.github.com/users/${{ github.actor }} | grep avatar_url | cut -d '"' -f4)"
+          REPO_NAME="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          COMMITS_URL="https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}"
+          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          COMMIT_MSG="$(git log -1 --pretty=format:'%s')"
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="$(echo $COMMIT_SHA | cut -c1-7)"
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "author": {
+                "name": "${{ github.actor }}",
+                "icon_url": "$AUTHOR_AVATAR"
+              },
+              "title": "[${REPO_NAME}:${BRANCH}] 1 new commit",
+              "url": "${COMMITS_URL}",
+              "description": "[\`${SHORT_SHA}\`](${COMMIT_URL}) $COMMIT_MSG - $AUTHOR_NAME",
+              "color": 7506394
+            }]
+          }
+          EOF
+          )
+          echo "Kirim payload ke Discord:"
+          echo "$PAYLOAD"
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "$PAYLOAD" \
+               "$DISCORD_WEBHOOK"
