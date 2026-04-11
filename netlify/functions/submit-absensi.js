@@ -81,14 +81,14 @@ exports.handler = async (event) => {
 
         // 2. UPDATE SEMUA DATA LAMA DI TABEL ABSENSI (Sinkronisasi Massal)
         // Bagian ini akan mencari semua baris dengan discord_id yang sama dan mengubah identitasnya
-        await supabase.from('absensi_sapd').update({
+        await supabase.from('absensi_sasg').update({
             nama_anggota: freshName,
             pangkat: freshPangkat,
             divisi: freshDivisi
         }).eq('discord_id', discordId);
 
         // 3. INSERT DATA ABSENSI BARU
-        const { error: insertError } = await supabase.from('absensi_sapd').insert(
+        const { error: insertError } = await supabase.from('absensi_sasg').insert(
             reports.map(r => ({
                 discord_id: discordId,
                 nama_anggota: freshName,
