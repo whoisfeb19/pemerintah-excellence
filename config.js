@@ -3,26 +3,13 @@
 // PENTING: Gunakan window. agar variabel bisa diakses oleh file HTML lain
 window.CONFIG = {
     DAFTAR_GAJI: {
-        "CHIEF OF POLICE": 80000,
-        "ASSISTANT CHIEF OF POLICE": 76000,
-        "DEPUTY CHIEF OF POLICE": 72000,
-        "COMMANDER": 68000,
-        "CAPTAIN III": 64000,
-        "CAPTAIN II": 60000,
-        "CAPTAIN I": 56000,
-        "LIEUTENANT III": 52000,
-        "LIEUTENANT II": 48000,
-        "LIEUTENANT I": 45000,
-        "SERGEANT III": 42000,
-        "SERGEANT II": 40000,
-        "SERGEANT I": 38000,
-        "DETECTIVE III": 36000,
-        "DETECTIVE II": 34000,
-        "DETECTIVE I": 32000,
-        "POLICE OFFICER III": 30000,
-        "POLICE OFFICER II": 28000,
-        "POLICE OFFICER I": 26000,
-        "CADET": 24000,
+        "GUBERUR": 150000,
+        "WAKIL GUBERNUR": 140000,
+        "SEKRETARIS": 120000,
+        "KEPALA DIVISI": 100000,
+        "STAFF SENIOR": 80000,
+        "STAFF JUNIOR": 50000,
+        "STAFF MAGANG": 25000,
         "UNKNOWN": 0
     },
     TARGET_HADIR: 6,
@@ -32,26 +19,13 @@ window.CONFIG = {
 
 // Tambahkan variabel ini untuk memperbaiki error "RANK_ORDER is not defined"
 window.RANK_ORDER = {
-    "CHIEF OF POLICE": 1,
-    "ASSISTANT CHIEF OF POLICE": 2,
-    "DEPUTY CHIEF OF POLICE": 3,
-    "COMMANDER": 4,
-    "CAPTAIN III": 5,
-    "CAPTAIN II": 6,
-    "CAPTAIN I": 7,
-    "LIEUTENANT III": 8,
-    "LIEUTENANT II": 9,
-    "LIEUTENANT I": 10,
-    "SERGEANT III": 11,
-    "SERGEANT II": 12,
-    "SERGEANT I": 13,
-    "DETECTIVE III": 14,
-    "DETECTIVE II": 15,
-    "DETECTIVE I": 16,
-    "POLICE OFFICER III": 17,
-    "POLICE OFFICER II": 18,
-    "POLICE OFFICER I": 19,
-    "CADET": 20
+    "GUBERUR": 1,
+    "WAKIL GUBERNUR": 2,
+    "SEKRETARIS": 3,
+    "KEPALA DIVISI": 4,
+    "STAFF SENIOR": 5,
+    "STAFF JUNIOR": 6,
+    "STAFF MAGANG": 7
 };
 
 window.hitungGajiMember = function(pangkat, jumlahHariHadir) {
