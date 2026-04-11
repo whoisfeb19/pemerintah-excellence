@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>SAPD Admin - Rekap & Payroll</title>
+    <script src="config.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root { --primary: #e94560; --bg: #1a1a2e; --card: #16213e; --text: #ffffff; --success: #27ae60; --info: #2980b9; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; display: none; }
+        .header-area { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 10px; }
+        .action-buttons { display: flex; gap: 10px; }
+        .card { background: var(--card); padding: 20px; border-radius: 10px; border-top: 4px solid var(--primary); overflow-x: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        
+        .global-stats { display: flex; justify-content: flex-end; margin-bottom: 15px; }
+        .salary-badge {
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid var(--success);
+            padding: 10px 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .salary-badge span { font-size: 0.75em; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+        .salary-badge b { font-size: 1.5em; color: var(--success); }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.8em; min-width: 1100px; }
+        th, td { border: 1px solid #30475e; padding: 12px 8px; text-align: center; }
+        th { background: #0f3460; position: sticky; top: 0; z-index: 10; }
+        .btn { padding: 10px 16px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; font-size: 0.85em; text-decoration: none; display: inline-block; }
+        .btn:hover { opacity: 0.8; transform: translateY(-1px); }
+        .btn-back { background: #444; }
+        .btn-reset { background: var(--primary); }
+        .btn-excel { background: var(--success); }
+        .btn-pdf { background: var(--info); }
+        .btn-warning { background: var(--warning); padding: 4px 8px; cursor: pointer; border-radius: 3px; border:none; color:white; font-size: 0.9em; }
+        .salary-text { color: #2ecc71; font-weight: bold; }
+        .check-icon { color: var(--success); font-weight: bold; font-size: 1.2em; }
+        .cross-icon { color: var(--primary); opacity: 0.5; font-size: 1.1em; }
+        .status-ic { color: var(--warning); font-weight: bold; font-size: 1.1em; }
+        .unwarn-link { color: #e94560; font-size: 10px; text-decoration: none; margin-top: 4px; display: block; cursor: pointer; font-weight: bold; }
+        .nav-btn-small { background: #30475e; color: white; border: none; padding: 8px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header-area">
+        <div>
+            <h2 style="margin: 0;">SAPD ADMIN - REKAP & PAYROLL</h2>
+            <p style="color: #888; margin: 5px 0 0 0;">Status: I (Izin), C (Cuti), ✔ (Hadir), ✘ (Alpa)</p>
+        </div>
+        <div class="action-buttons">
+            <a href="dashboard.html" class="btn btn-back">⬅ Dashboard</a>
+            <button class="btn btn-reset" onclick="resetAllWeeklyData()">🔥 Reset Data</button>
+            <button class="btn btn-excel" onclick="downloadExcel()">📊 Export Excel</button>
+            <button class="btn btn-pdf" onclick="downloadPDF()">📄 Export PDF</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex; justify-content:center; align-items:center; gap:30px; margin-bottom:20px;">
+            <button class="nav-btn-small" onclick="changeWeek(-1)">◀ Prev</button>
+            <h3 id="label-minggu" style="margin:0; color: #f39c12; min-width: 250px; text-align: center;">Memuat...</h3>
+            <button class="nav-btn-small" onclick="changeWeek(1)">Next ▶</button>
+        </div>
+
+        <div class="global-stats">
+            <div class="salary-badge">
+                <span>Total Pengeluaran Gaji (Minggu Ini)</span>
+                <b id="total-gaji-global">$0</b>
+            </div>
+        </div>
+
+        <table id="table-rekap">
+            <thead>
+                <tr>
+                    <th>Nama Anggota</th>
+                    <th>Pangkat</th>
+                    <th>Sen</th><th>Sel</th><th>Rab</th><th>Kam</th><th>Jum</th><th>Sab</th>
+                    <th>Total</th>
+                    <th>Gaji</th>
+                    <th>Status & Warning</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-weekly"></tbody>
+        </table>
+    </div>
+
+<script src="rekap.js"></script>
+</body>
+</html>

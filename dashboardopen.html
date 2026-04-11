@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAPD Dashboard - Panel Anggota</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --primary: #e94560; --bg: #1a1a2e; --card: #16213e; --text: #ffffff; --success: #2ecc71; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        
+        .container { background: var(--card); padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 450px; border-top: 5px solid var(--primary); }
+        
+        .nav-bar { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 10px; }
+        .nav-btn { flex: 1; padding: 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.8em; font-weight: bold; text-decoration: none; text-align: center; color: white; transition: 0.3s; }
+        .btn-logout { background: #444; }
+        .btn-admin { background: #f39c12; display: none; border: 2px solid rgba(255,255,255,0.1); }
+        .btn-admin:hover { background: #e67e22; transform: translateY(-2px); }
+
+        h2 { text-align: center; margin: 10px 0 5px 0; text-transform: uppercase; }
+        h4 { text-align: center; color: #888; font-weight: normal; margin-bottom: 25px; border-bottom: 1px solid #30475e; padding-bottom: 15px; }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.85em; color: #aaa; }
+        input, textarea, select { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #30475e; background: #1a1a2e; color: white; box-sizing: border-box; font-family: inherit; }
+        
+        .date-row, .time-row { display: flex; gap: 10px; }
+        .date-row div, .time-row div { flex: 1; }
+
+        button#btn-submit { width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--primary); color: white; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; font-size: 16px; }
+        button#btn-submit:disabled { background: #555; cursor: not-allowed; }
+        
+        #status-msg { text-align: center; margin-top: 15px; font-size: 0.9em; font-weight: bold; min-height: 1.5em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="nav-bar">
+        <a href="#" class="nav-btn btn-logout" onclick="logout()">Logout</a>
+        <a href="rekap.html" id="admin-link" class="nav-btn btn-admin">Panel Rekap (Admin)</a>
+    </div>
+
+    <div id="dashboard-content">
+        <h2 id="name-display">Memuat...</h2>
+        <h4 id="rank-display">Pangkat | Divisi</h4>
+
+        <form id="absensi-form">
+            <div class="form-group">
+                <label>Status Kehadiran</label>
+                <select id="status_absen" onchange="toggleFormMode()" required>
+                    <option value="HADIR">HADIR (ON DUTY)</option>
+                    <option value="IZIN">IZIN (HALANGAN)</option>
+                    <option value="CUTI">CUTI (RENTANG WAKTU)</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="single-date-section">
+                <label id="label-tanggal">Tanggal</label>
+                <input type="date" id="tanggal_absen">
+            </div>
+
+            <div class="form-group" id="range-date-section" style="display:none;">
+                <label>Periode Cuti (Mulai - Berakhir)</label>
+                <div class="date-row">
+                    <div><input type="date" id="cuti_mulai"></div>
+                    <div><input type="date" id="cuti_selesai"></div>
+                </div>
+            </div>
+
+            <div id="hadir-section">
+                <div class="form-group">
+                    <label>Waktu Duty (Mulai - Selesai)</label>
+                    <div class="time-row">
+                        <div><input type="time" id="jam_mulai"></div>
+                        <div style="display:flex; align-items:center; color:#aaa;">s/d</div>
+                        <div><input type="time" id="jam_selesai"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Bukti Foto (SS SAMP)</label>
+                    <input type="file" id="bukti_foto" accept="image/*">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label id="label-kegiatan">Kegiatan / Alasan</label>
+                <textarea id="kegiatan" rows="3" placeholder="Deskripsi..." required></textarea>
+            </div>
+
+            <button type="submit" id="btn-submit">Kirim Laporan</button>
+        </form>
+        <div id="status-msg"></div>
+    </div>
+</div>
+
+<script>
+    const _supabase = window.supabase.createClient("https://urclmvdkfkfwvdascobs.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyY2xtdmRrZmtmd3ZkYXNjb2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDkzMjQsImV4cCI6MjA5MTM4NTMyNH0.FE8ynCm5Pfg861wpG1rslSCLSNUnXSwyEIVbHiqajT4");
+
+    window.onload = () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const discordId = urlParams.get('id');
+        const name = urlParams.get('name');
+        const rank = urlParams.get('pangkat');
+        const divisi = urlParams.get('divisi');
+        const isAdmin = urlParams.get('admin') === 'true';
+
+        if (!discordId && !localStorage.getItem("discord_id")) { 
+            window.location.href = "index.html"; 
+            return;
+        }
+
+        if (discordId && name) {
+            localStorage.setItem("discord_id", discordId);
+            localStorage.setItem("nama_user", decodeURIComponent(name));
+            localStorage.setItem("pangkat", decodeURIComponent(rank || "Unknown"));
+            localStorage.setItem("divisi", decodeURIComponent(divisi || "-"));
+            localStorage.setItem("is_admin", isAdmin);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        updateUI();
+        toggleFormMode();
+    };
+
+    function updateUI() {
+        document.getElementById('name-display').innerText = localStorage.getItem("nama_user");
+        document.getElementById('rank-display').innerText = `${localStorage.getItem("pangkat")} | ${localStorage.getItem("divisi")}`;
+        if (localStorage.getItem("is_admin") === "true") {
+            document.getElementById('admin-link').style.display = 'block';
+        }
+    }
+
+    function toggleFormMode() {
+        const status = document.getElementById('status_absen').value;
+        const today = new Date().toLocaleDateString('en-CA'); // Format YYYY-MM-DD
+        
+        const hadirSec = document.getElementById('hadir-section');
+        const singleSec = document.getElementById('single-date-section');
+        const rangeSec = document.getElementById('range-date-section');
+        const fileInput = document.getElementById('bukti_foto');
+        const tglInput = document.getElementById('tanggal_absen');
+        const cutiMulai = document.getElementById('cuti_mulai');
+        const cutiSelesai = document.getElementById('cuti_selesai');
+
+        // Reset values & constraints
+        tglInput.value = "";
+        cutiMulai.value = "";
+        cutiSelesai.value = "";
+        tglInput.removeAttribute('min');
+        tglInput.removeAttribute('max');
+        cutiMulai.removeAttribute('min');
+        cutiSelesai.removeAttribute('min');
+
+        if (status === "HADIR") {
+            // HADIR: Hanya Hari Ini & Sebelumnya (Max = Today)
+            singleSec.style.display = "block";
+            rangeSec.style.display = "none";
+            hadirSec.style.display = "block";
+            tglInput.max = today; 
+            tglInput.required = true;
+            fileInput.required = true;
+        } else if (status === "IZIN") {
+            // IZIN: Hanya Hari Ini & Selanjutnya (Min = Today)
+            singleSec.style.display = "block";
+            rangeSec.style.display = "none";
+            hadirSec.style.display = "none";
+            tglInput.min = today; 
+            tglInput.required = true;
+            fileInput.required = false;
+        } else if (status === "CUTI") {
+            // CUTI: Hanya Hari Ini & Selanjutnya (Min = Today)
+            singleSec.style.display = "none";
+            rangeSec.style.display = "block";
+            hadirSec.style.display = "none";
+            cutiMulai.min = today;
+            cutiSelesai.min = today;
+            tglInput.required = false;
+            cutiMulai.required = true;
+            cutiSelesai.required = true;
+            fileInput.required = false;
+        }
+    }
+
+    function logout() { 
+        if (confirm("Logout dan hapus sesi?")) {
+            localStorage.clear();
+            window.location.href = "index.html"; 
+        }
+    }
+
+    document.getElementById('absensi-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('btn-submit');
+        const msg = document.getElementById('status-msg');
+        const statusAbsen = document.getElementById('status_absen').value;
+        const discordId = localStorage.getItem("discord_id");
+        
+        btn.disabled = true;
+        btn.innerText = "Memverifikasi...";
+
+        try {
+            let dateList = [];
+            if (statusAbsen === "CUTI") {
+                let dStart = new Date(document.getElementById('cuti_mulai').value);
+                let dEnd = new Date(document.getElementById('cuti_selesai').value);
+                if (dEnd < dStart) throw new Error("Tanggal selesai tidak valid.");
+                for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
+                    if (d.getDay() !== 0) dateList.push(new Date(d));
+                }
+            } else {
+                let tglVal = new Date(document.getElementById('tanggal_absen').value);
+                if (tglVal.getDay() === 0) throw new Error("Hari Minggu libur!");
+                dateList.push(tglVal);
+            }
+
+            if (dateList.length === 0) throw new Error("Pilih tanggal valid.");
+
+            let imgUrl = "N/A";
+            const file = document.getElementById('bukti_foto').files[0];
+            if (statusAbsen === "HADIR" && file) {
+                btn.innerText = "Mengunggah Foto...";
+                const path = `absensi/${Date.now()}_${discordId}.png`;
+                await _supabase.storage.from('bukti-absen').upload(path, file);
+                imgUrl = _supabase.storage.from('bukti-absen').getPublicUrl(path).data.publicUrl;
+            }
+
+            btn.innerText = "Mengirim...";
+            const reports = dateList.map(d => ({
+                discord_id: discordId,
+                jam_duty: (statusAbsen === "HADIR") ? `${document.getElementById('jam_mulai').value} - ${document.getElementById('jam_selesai').value}` : statusAbsen,
+                kegiatan: document.getElementById('kegiatan').value,
+                bukti_foto: imgUrl,
+                created_at: d.toISOString()
+            }));
+
+            const response = await fetch('/.netlify/functions/submit-absensi', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reports)
+            });
+
+            const result = await response.json();
+            if (response.status === 403) {
+                alert("AKSES DICABUT!");
+                localStorage.clear();
+                window.location.href = "index.html";
+                return;
+            }
+
+            if (response.status !== 200) throw new Error(result.message);
+
+            localStorage.setItem("nama_user", result.updatedData.name);
+            localStorage.setItem("pangkat", result.updatedData.pangkat);
+            localStorage.setItem("divisi", result.updatedData.divisi);
+            updateUI();
+
+            msg.innerText = "✔ Berhasil dikirim!";
+            msg.style.color = "#2ecc71";
+            document.getElementById('absensi-form').reset();
+            toggleFormMode();
+
+        } catch (err) {
+            msg.innerText = "❌ " + err.message;
+            msg.style.color = "#e94560";
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Kirim Laporan";
+        }
+    });
+</script>
+</body>
+</html>

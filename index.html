@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAPD Attendance - Login</title>
+    <style>
+        :root {
+            --primary: #e94560;
+            --discord: #5865F2;
+            --bg: #1a1a2e;
+            --card: #16213e;
+        }
+        body { 
+            background: var(--bg); 
+            color: white; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+        }
+        .login-card { 
+            background: var(--card); 
+            padding: 40px; 
+            border-radius: 15px; 
+            text-align: center; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+            border-top: 5px solid var(--primary);
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 { margin-bottom: 10px; letter-spacing: 2px; font-size: 1.8em; }
+        p { color: #888; margin-bottom: 30px; font-size: 0.9em; line-height: 1.5; }
+        
+        .btn-discord { 
+            background: var(--discord); 
+            color: white; 
+            padding: 15px 30px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: 0.3s;
+            border: none;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .btn-discord:hover { 
+            background: #4752c4; 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(88, 101, 242, 0.4);
+        }
+        .footer {
+            margin-top: 25px;
+            font-size: 0.75em;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div style="font-size: 60px; margin-bottom: 10px;">🚔</div>
+        <h1>SAPD SYSTEM</h1>
+        <p>Gunakan akun Discord Anda untuk memverifikasi identitas, pangkat, dan akses panel anggota.</p>
+        
+        <a href="https://discord.com/api/oauth2/authorize?client_id=1492077767049740309&redirect_uri=https://san-andreas-police-departement.netlify.app/.netlify/functions/auth-callback&response_type=code&scope=identify" class="btn-discord">
+            <img src="https://cdn-icons-png.flaticon.com/512/2111/2111370.png" width="20" style="filter: brightness(0) invert(1);">
+            Login with Discord
+        </a>
+
+        <div class="footer">
+            &copy; 2026 San Andreas Police Department <br>
+            Developed for SAMP Community
+        </div>
+    </div>
+
+    <script>
+        // Opsional: Jika user yang sudah login iseng balik ke index, 
+        // kita arahkan otomatis kembali ke dashboard.
+        window.onload = () => {
+            if (localStorage.getItem("discord_id")) {
+                window.location.href = "dashboard.html";
+            }
+        };
+    </script>
+</body>
+</html>

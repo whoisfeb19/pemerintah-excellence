@@ -1,0 +1,10 @@
+[[plugins]]
+package = "netlify-plugin-js-obfuscator"
+
+  [plugins.inputs]
+  # Hanya gunakan opsi yang didukung plugin ini:
+  compact = true
+  numbersToExpressions = true
+  simplify = true
+  shuffleStringArray = true
+  splitStrings = true

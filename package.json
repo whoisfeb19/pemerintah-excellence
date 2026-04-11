@@ -1,0 +1,13 @@
+{
+  "name": "sapd-attendance",
+  "version": "1.0.0",
+  "description": "Sistem Absensi SAPD",
+  "main": "index.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.0"
+  },
+  "scripts": {
+    "build": "echo 'No build step required'"
+  }
+}

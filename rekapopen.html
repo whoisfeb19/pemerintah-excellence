@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>SAPD Admin - Rekap & Payroll</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root { --primary: #e94560; --bg: #1a1a2e; --card: #16213e; --text: #ffffff; --success: #27ae60; --info: #2980b9; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; display: none; } /* Hidden by default for auth check */
+        .header-area { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 10px; }
+        .action-buttons { display: flex; gap: 10px; }
+        .card { background: var(--card); padding: 20px; border-radius: 10px; border-top: 4px solid var(--primary); overflow-x: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8em; min-width: 1100px; }
+        th, td { border: 1px solid #30475e; padding: 12px 8px; text-align: center; }
+        th { background: #0f3460; position: sticky; top: 0; z-index: 10; }
+        .btn { padding: 10px 16px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; font-size: 0.85em; text-decoration: none; display: inline-block; }
+        .btn:hover { opacity: 0.8; transform: translateY(-1px); }
+        .btn-back { background: #444; }
+        .btn-reset { background: var(--primary); }
+        .btn-excel { background: var(--success); }
+        .btn-pdf { background: var(--info); }
+        .btn-warning { background: var(--warning); padding: 4px 8px; cursor: pointer; border-radius: 3px; border:none; color:white; font-size: 0.9em; }
+        .salary-text { color: #2ecc71; font-weight: bold; }
+        .check-icon { color: var(--success); font-weight: bold; font-size: 1.2em; }
+        .cross-icon { color: var(--primary); opacity: 0.5; font-size: 1.1em; }
+        .status-ic { color: var(--warning); font-weight: bold; font-size: 1.1em; }
+        .unwarn-link { color: #e94560; font-size: 10px; text-decoration: none; margin-top: 4px; display: block; cursor: pointer; font-weight: bold; }
+        .nav-btn-small { background: #30475e; color: white; border: none; padding: 8px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header-area">
+        <div>
+            <h2 style="margin: 0;">SAPD ADMIN - REKAP & PAYROLL</h2>
+            <p style="color: #888; margin: 5px 0 0 0;">Status: I (Izin), C (Cuti), ✔ (Hadir), ✘ (Alpa)</p>
+        </div>
+        <div class="action-buttons">
+            <a href="dashboard.html" class="btn btn-back">⬅ Dashboard</a>
+            <button class="btn btn-reset" onclick="resetAllWeeklyData()">🔥 Reset Data</button>
+            <button class="btn btn-excel" onclick="downloadExcel()">📊 Export Excel</button>
+            <button class="btn btn-pdf" onclick="downloadPDF()">📄 Export PDF</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex; justify-content:center; align-items:center; gap:30px; margin-bottom:20px;">
+            <button class="nav-btn-small" onclick="changeWeek(-1)">◀ Prev</button>
+            <h3 id="label-minggu" style="margin:0; color: #f39c12; min-width: 250px; text-align: center;">Memuat...</h3>
+            <button class="nav-btn-small" onclick="changeWeek(1)">Next ▶</button>
+        </div>
+
+        <table id="table-rekap">
+            <thead>
+                <tr>
+                    <th>Nama Anggota</th>
+                    <th>Pangkat</th>
+                    <th>Sen</th><th>Sel</th><th>Rab</th><th>Kam</th><th>Jum</th><th>Sab</th>
+                    <th>Total</th>
+                    <th>Gaji</th>
+                    <th>Status & Warning</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="tbody-weekly"></tbody>
+        </table>
+    </div>
+
+<script>
+    // --- PROTEKSI HALAMAN ---
+    function checkAuth() {
+        const isAdmin = localStorage.getItem("is_admin");
+        if (isAdmin !== "true") {
+            alert("AKSES DITOLAK: Halaman ini hanya untuk High Command (Admin).");
+            window.location.href = "dashboard.html";
+        } else {
+            document.body.style.display = "block";
+        }
+    }
+    checkAuth();
+
+    // Konfigurasi Supabase
+    const _supabase = window.supabase.createClient("https://urclmvdkfkfwvdascobs.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyY2xtdmRrZmtmd3ZkYXNjb2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MDkzMjQsImV4cCI6MjA5MTM4NTMyNH0.FE8ynCm5Pfg861wpG1rslSCLSNUnXSwyEIVbHiqajT4");
+
+    const RANK_ORDER = { "CHIEF OF POLICE": 1, "ASSISTANT CHIEF OF POLICE": 2, "DEPUTY CHIEF OF POLICE": 3, "COMMANDER": 4, "CAPTAIN III": 5, "CAPTAIN II": 6, "CAPTAIN I": 7, "LIEUTENANT III": 8, "LIEUTENANT II": 9, "LIEUTENANT I": 10, "SERGEANT III": 11, "SERGEANT II": 12, "SERGEANT I": 13, "DETECTIVE III": 14, "DETECTIVE II": 15, "DETECTIVE I": 16, "POLICE OFFICER III": 17, "POLICE OFFICER II": 18, "POLICE OFFICER I": 19, "CADET": 20 };
+    const BASE_SALARY = { "CHIEF OF POLICE": 80000, "ASSISTANT CHIEF OF POLICE": 76000, "DEPUTY CHIEF OF POLICE": 72000, "COMMANDER": 68000, "CAPTAIN III": 64000, "CAPTAIN II": 60000, "CAPTAIN I": 56000, "LIEUTENANT III": 52000, "LIEUTENANT II": 48000, "LIEUTENANT I": 45000, "SERGEANT III": 42000, "SERGEANT II": 40000, "SERGEANT I": 38000, "DETECTIVE III": 36000, "DETECTIVE II": 34000, "DETECTIVE I": 32000, "POLICE OFFICER III": 30000, "POLICE OFFICER II": 28000, "POLICE OFFICER I": 26000, "CADET": 24000 };
+
+    let currentWeekOffset = 0;
+    let userWeekly = {}; 
+
+    async function loadData() {
+        const { mon, sun } = getWeekRange(currentWeekOffset);
+        document.getElementById('label-minggu').innerText = `${mon.toLocaleDateString('id-ID')} - ${sun.toLocaleDateString('id-ID')}`;
+
+        const { data: logs } = await _supabase.from('absensi_sapd').select('*').gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+        const { data: masters } = await _supabase.from('users_master').select('*');
+
+        masters.sort((a, b) => (RANK_ORDER[a.pangkat.toUpperCase()] || 99) - (RANK_ORDER[b.pangkat.toUpperCase()] || 99));
+
+        userWeekly = {}; 
+        masters.forEach(m => {
+            userWeekly[m.discord_id] = { info: m, days: { 1:null, 2:null, 3:null, 4:null, 5:null, 6:null }, totalHadir: 0 };
+        });
+
+        logs.forEach(log => {
+            const d = new Date(log.created_at).getDay();
+            if (userWeekly[log.discord_id] && d !== 0) {
+                const ket = (log.jam_duty || "").toUpperCase();
+                userWeekly[log.discord_id].days[d] = { ket: ket };
+                if (!ket.includes("IZIN") && !ket.includes("CUTI")) userWeekly[log.discord_id].totalHadir++;
+            }
+        });
+
+        document.getElementById('tbody-weekly').innerHTML = masters.map(m => {
+            const u = userWeekly[m.discord_id];
+            const gajiPokok = BASE_SALARY[m.pangkat.toUpperCase()] || 0;
+            let totalGaji = (gajiPokok / 5) * Math.min(u.totalHadir, 5);
+            if (u.totalHadir >= 6) totalGaji += 10000;
+
+            const cWarn = m.total_warning || 0;
+            const getIcon = (idx) => {
+                const data = u.days[idx];
+                if (!data) return `<span class="cross-icon">✘</span>`;
+                if (data.ket.includes("IZIN")) return `<span class="status-ic">I</span>`;
+                if (data.ket.includes("CUTI")) return `<span class="status-ic">C</span>`;
+                return `<span class="check-icon">✔</span>`;
+            };
+
+            // Menggunakan data admin dari localStorage untuk prompt SP otomatis
+            const currentAdminName = localStorage.getItem("nama_user");
+            const currentAdminRank = localStorage.getItem("pangkat");
+
+            return `<tr>
+                <td style="text-align:left;"><b>${m.nama_anggota}</b></td>
+                <td>${m.pangkat}</td>
+                ${[1,2,3,4,5,6].map(i => `<td>${getIcon(i)}</td>`).join('')}
+                <td>${u.totalHadir}/6</td>
+                <td class="salary-text">$${Math.floor(totalGaji).toLocaleString()}</td>
+                <td>
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                        <button class="btn-warning" onclick="sendWarning('${m.discord_id}', '${m.nama_anggota}', '${m.pangkat}', ${cWarn}, '${currentAdminName}', '${currentAdminRank}')">⚠️ Warning (${cWarn})</button>
+                        ${cWarn > 0 ? `<span class="unwarn-link" onclick="removeWarning('${m.discord_id}', '${m.nama_anggota}', '${m.pangkat}', ${cWarn}, '${currentAdminName}', '${currentAdminRank}')">[ Cabut SP ]</span>` : ''}
+                    </div>
+                </td>
+                <td><button onclick="resetUser('${m.discord_id}')" style="background:none;border:none;cursor:pointer;">🗑</button></td>
+            </tr>`;
+        }).join('');
+    }
+
+    async function sendWarning(discord_id, nama_anggota, pangkat_anggota, currentWarn, adminName, adminRank) {
+        if (!confirm(`Kirim SP-${currentWarn + 1} ke Discord?\n(Oleh: ${adminName} - ${adminRank})`)) return;
+        
+        const { mon } = getWeekRange(currentWeekOffset);
+        const u = userWeekly[discord_id];
+        const daftarBolos = [];
+        const hari = ["", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+        for(let i=1; i<=6; i++) { 
+            if(!u.days[i]) { 
+                const t=new Date(mon); t.setDate(mon.getDate()+(i-1)); 
+                daftarBolos.push(`- ${hari[i]}, ${t.toLocaleDateString('id-ID')}`); 
+            } 
+        }
+
+        const newWarnCount = currentWarn + 1;
+        const logPayload = {
+            "content": "@everyone <@&1444908462067945623>",
+            "embeds": [{
+                "title": `📋 SURAT PERINGATAN (SP - ${newWarnCount})`,
+                "color": 15285324,
+                "description": `**Tanggal:** ${new Date().toLocaleDateString('id-ID')}\n**Nama Anggota:** ${nama_anggota} (<@${discord_id}>)\n**Pangkat:** ${pangkat_anggota}\n\n**Alasan Peringatan:**\nTidak memenuhi syarat kehadiran mingguan.\nDetail Bolos:\n${daftarBolos.join('\n')}\n**Total SP:** ${newWarnCount}\n\n**Pemberi Peringatan:** ${adminName}\n**Pangkat:** ${adminRank}`,
+                "timestamp": new Date()
+            }]
+        };
+
+        await _supabase.from('users_master').update({ total_warning: newWarnCount }).eq('discord_id', discord_id);
+        const res = await fetch('/.netlify/functions/send-warning', { 
+            method: 'POST', 
+            body: JSON.stringify({ payload: logPayload, updateList: await updateDiscordList() }) 
+        });
+        if (res.ok) { alert("SP Terkirim!"); loadData(); }
+    }
+
+    async function removeWarning(discord_id, nama_anggota, pangkat_anggota, currentWarn, adminName, adminRank) {
+        if (!confirm(`Cabut SP untuk ${nama_anggota}?\n(Oleh: ${adminName} - ${adminRank})`)) return;
+        const newWarnCount = Math.max(0, currentWarn - 1);
+
+        const logPayload = {
+            "content": "<@&1444908462067945623>",
+            "embeds": [{
+                "title": `🔓 PENCABUTAN SURAT PERINGATAN`,
+                "color": 3066993,
+                "description": `**Tanggal:** ${new Date().toLocaleDateString('id-ID')}\n**Nama Anggota:** ${nama_anggota} (<@${discord_id}>)\n**Pangkat Anggota:** ${pangkat_anggota}\n\n**Status:** 1 SP telah dicabut.\n**Sisa SP:** ${newWarnCount}\n\n**Dicabut Oleh:** ${adminName}\n**Pangkat Admin:** ${adminRank}`,
+                "timestamp": new Date()
+            }]
+        };
+
+        await _supabase.from('users_master').update({ total_warning: newWarnCount }).eq('discord_id', discord_id);
+        const res = await fetch('/.netlify/functions/send-warning', { 
+            method: 'POST', 
+            body: JSON.stringify({ payload: logPayload, updateList: await updateDiscordList() }) 
+        });
+        if (res.ok) { alert("SP Berhasil dicabut!"); loadData(); }
+    }
+
+    async function updateDiscordList() {
+        const { data: masters } = await _supabase.from('users_master').select('*');
+        masters.sort((a, b) => (RANK_ORDER[a.pangkat.toUpperCase()] || 99) - (RANK_ORDER[b.pangkat.toUpperCase()] || 99));
+        let txt = "## 📊 DAFTAR TOTAL WARNING ANGGOTA SAPD\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        masters.forEach(m => {
+            const emoji = m.total_warning >= 3 ? "🔴" : (m.total_warning > 0 ? "🟡" : "🟢");
+            txt += `${emoji} ${m.nama_anggota} (<@${m.discord_id}>) : \`${m.total_warning || 0} SP\`\n`;
+        });
+        return txt.substring(0, 1990);
+    }
+
+    function downloadExcel() {
+        const rows = [["Nama Anggota", "Pangkat", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Total", "Gaji"]];
+        document.querySelectorAll("#tbody-weekly tr").forEach(tr => {
+            const rowData = [];
+            tr.querySelectorAll("td").forEach((td, i) => {
+                if(i < 10) {
+                    let val = td.innerText.trim();
+                    if(td.querySelector(".check-icon")) val = "HADIR";
+                    else if(td.querySelector(".cross-icon")) val = "ALPA";
+                    rowData.push(val);
+                }
+            });
+            rows.push(rowData);
+        });
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{wch:25}, {wch:20}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:12}];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Rekap");
+        XLSX.writeFile(wb, `Rekap_SAPD.xlsx`);
+    }
+
+    function downloadPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('l', 'mm', 'a4');
+        doc.autoTable({
+            html: '#table-rekap',
+            columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            theme: 'grid',
+            styles: { fontSize: 8, lineWidth: 0.1, lineColor: [48, 71, 94] },
+            didParseCell: function(data) {
+                if (data.cell.section === 'body') {
+                    const txt = data.cell.raw.innerText;
+                    if (txt === '✔') { data.cell.styles.fillColor = [39, 174, 96]; data.cell.styles.textColor = 255; }
+                    else if (txt === 'I' || txt === 'C') { data.cell.styles.fillColor = [243, 156, 18]; data.cell.styles.textColor = 255; }
+                    else if (txt === '✘') { data.cell.styles.fillColor = [233, 69, 96]; data.cell.styles.textColor = 255; }
+                }
+            }
+        });
+        doc.save(`Rekap_SAPD.pdf`);
+    }
+
+    function getWeekRange(offset = 0) {
+        const now = new Date(); now.setDate(now.getDate() + (offset * 7));
+        const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        const mon = new Date(now.setDate(diff)); mon.setHours(0,0,0,0);
+        const sun = new Date(mon); sun.setDate(mon.getDate() + 6); sun.setHours(23,59,59,999);
+        return { mon, sun };
+    }
+    
+    async function resetUser(id) {
+        if (!confirm("Hapus data absensi anggota ini di minggu ini?")) return;
+        const { mon, sun } = getWeekRange(currentWeekOffset);
+        await _supabase.from('absensi_sapd').delete().eq('discord_id', id).gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+        loadData();
+    }
+
+    async function resetAllWeeklyData() {
+        if (!confirm("Hapus SEMUA data absensi minggu ini?")) return;
+        const { mon, sun } = getWeekRange(currentWeekOffset);
+        await _supabase.from('absensi_sapd').delete().gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+        loadData();
+    }
+
+    function changeWeek(dir) { currentWeekOffset += dir; loadData(); }
+    loadData();
+</script>
+</body>
+</html>
