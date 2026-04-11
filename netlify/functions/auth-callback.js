@@ -46,7 +46,7 @@ exports.handler = async (event) => {
             
             return {
                 statusCode: 403,
-                body: "AKSES DITOLAK: Anda tidak memiliki Role SAPD di Discord."
+                body: "AKSES DITOLAK: Anda tidak memiliki Role Anggota Pemerintah di Discord."
             };
         }
 
