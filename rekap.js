@@ -19,7 +19,7 @@
         const { mon, sun } = getWeekRange(currentWeekOffset);
         document.getElementById('label-minggu').innerText = `${mon.toLocaleDateString('id-ID')} - ${sun.toLocaleDateString('id-ID')}`;
 
-        const { data: logs } = await _supabase.from('absensi_sapd').select('*').gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+        const { data: logs } = await _supabase.from('absensi_sasg').select('*').gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
         const { data: masters } = await _supabase.from('users_master').select('*');
 
         // Menggunakan RANK_ORDER dari config.js
