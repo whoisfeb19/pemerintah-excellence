@@ -2,10 +2,9 @@ require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 
-// Inisialisasi Supabase
+// 1. INISIALISASI KONEKSI
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-// Inisialisasi Discord Client
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
@@ -37,28 +36,30 @@ const DIVISI_MAP = {
 const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376"; 
 const REQUIRED_ROLE_ID = "1492398964610170940";
 
+// 4. LOGIKA UTAMAsa
 client.once('ready', async () => {
-    console.log(`Bot login sebagai ${client.user.tag}`);
+    console.log(`Bot berhasil login sebagai ${client.user.tag}`);
     
     const guild = client.guilds.cache.get(process.env.DISCORD_GUILD_ID);
     if (!guild) {
-        console.error("Gagal menemukan Server Discord!");
+        console.error("Error: Server Discord tidak ditemukan!");
         process.exit();
     }
 
     try {
-        // --- 1. FITUR SINKRONISASI ---
+        // --- BAGIAN A: SINKRONISASI DATA ---
         console.log("Memulai sinkronisasi member...");
         const members = await guild.members.fetch();
         const dataToUpsert = [];
         const activeDiscordIds = [];
 
-        // Gunakan for...of untuk mendukung await di dalam loop
         for (const [id, member] of members) {
+            // Hanya proses yang punya Role SAPD
             if (member.roles.cache.has(REQUIRED_ROLE_ID)) {
                 let userPangkat = "-";
                 let userDivisi = "-";
 
+                // Cek Role untuk Pangkat & Divisi
                 member.roles.cache.forEach(role => {
                     if (PANGKAT_MAP[role.id]) userPangkat = PANGKAT_MAP[role.id];
                     if (DIVISI_MAP[role.id]) userDivisi = DIVISI_MAP[role.id];
@@ -67,10 +68,10 @@ client.once('ready', async () => {
                 const freshName = member.nickname || member.user.globalName || member.user.username;
                 activeDiscordIds.push(member.id);
 
-                // Sinkronisasi data ke tabel logs (absensi_sasg)
-                // Mengupdate semua baris yang sudah ada tanpa menambah data baru (mencegah duplikat)
+                // Update RIWAYAT ABSENSI (Agar logs lama ikut berubah pangkatnya)
+                // Ini mengupdate semua baris yang punya discord_id tersebut
                 await supabase
-                    .from('absensi_sasg')
+                    .from('absensi_sapd')
                     .update({
                         nama_anggota: freshName,
                         pangkat: userPangkat,
@@ -78,6 +79,7 @@ client.once('ready', async () => {
                     })
                     .eq('discord_id', member.id);
 
+                // Siapkan data untuk PROFIL (users_master)
                 dataToUpsert.push({
                     discord_id: member.id,
                     nama_anggota: freshName,
@@ -88,50 +90,51 @@ client.once('ready', async () => {
             }
         }
 
-        // HAPUS member yang keluar (Fitur users_master tetap sesuai aslinya)
+        // Hapus member yang sudah tidak ada di Discord/Role dicabut (Pembersihan Database)
         if (activeDiscordIds.length > 0) {
-            const { error: deleteError } = await supabase
+            await supabase
                 .from('users_master')
                 .delete()
                 .not('discord_id', 'in', `(${activeDiscordIds.join(',')})`);
-            
-            if (deleteError) console.error("Gagal menghapus member keluar:", deleteError.message);
         }
 
-        // UPDATE atau TAMBAH ke users_master
+        // Jalankan Upsert ke profil (Update jika ada, Tambah jika baru)
         const { error: upsertError } = await supabase
             .from('users_master')
             .upsert(dataToUpsert, { onConflict: 'discord_id' });
 
         if (upsertError) throw upsertError;
-        console.log("Sinkronisasi Berhasil! Database profil & riwayat absen terupdate.");
+        console.log("Sinkronisasi Profil & Riwayat Berhasil!");
 
-        // --- 2. FITUR BROADCAST (WIB) ---
+        // --- BAGIAN B: BROADCAST PENGUMUMAN (WIB) ---
         const sekarang = new Date();
         const waktuWIB = new Date(sekarang.getTime() + (7 * 60 * 60 * 1000));
-        const jam = waktuWIB.getUTCHours().toString().padStart(2, '0');
+        const jam = waktuWIB.getUTCHours();
         const menit = waktuWIB.getUTCMinutes();
-        const waktuString = `${jam}:${menit.toString().padStart(2, '0')}`;
 
-        console.log(`Waktu saat ini (WIB): ${waktuString}`);
+        console.log(`Waktu saat ini (WIB): ${jam}:${menit.toString().padStart(2, '0')}`);
 
         const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
         
         if (channel) {
-            if (jam === "19" && (menit >= 30 && menit <= 59)) { 
-                await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://exsg.netlify.app/\n\n@everyone");
-                console.log("Pesan 19:30 terkirim.");
+            // Logika Jam 19:30 - 19:59 WIB (Duty Reminder)
+            if (jam === 19 && menit >= 30) { 
+                await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI\nLINK KEHADIRAN : https://exsg.netlify.app/\n\n@everyone");
+                console.log("Pesan Duty terkirim.");
             } 
-            else if (jam === "22" && (menit >= 0 && menit <= 59)) {
-                await channel.send("📢 **REMINDER ABSENSI**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN DI https://exsg.netlify.app/\n\n@everyone");
-                console.log("Pesan 22:00 terkirim.");
+            // Logika Jam 22:00 - 22:59 WIB (Absensi Reminder)
+            else if (jam === 22) {
+                await channel.send("📢 **REMINDER KEHADIRAN**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN\nLINK KEHADIRAN : https://exsg.netlify.app/\n\n@everyone");
+                console.log("Pesan Absensi terkirim.");
             }
         }
 
     } catch (err) {
-        console.error("Terjadi kesalahan:", err.message);
+        console.error("Terjadi kesalahan fatal:", err.message);
     } finally {
-        setTimeout(() => process.exit(), 5000);
+        // Kasih jeda 8 detik agar semua proses asinkron Supabase benar-benar selesai
+        console.log("Proses selesai, bot akan dimatikan.");
+        setTimeout(() => process.exit(), 8000);
     }
 });
 
