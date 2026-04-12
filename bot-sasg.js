@@ -54,7 +54,7 @@ client.once('ready', async () => {
         const activeDiscordIds = [];
 
         for (const [id, member] of members) {
-            // Hanya proses yang punya Role SAPD
+            // Hanya proses yang punya Role Anggota Pemerintah
             if (member.roles.cache.has(REQUIRED_ROLE_ID)) {
                 let userPangkat = "-";
                 let userDivisi = "-";
@@ -71,7 +71,7 @@ client.once('ready', async () => {
                 // Update RIWAYAT ABSENSI (Agar logs lama ikut berubah pangkatnya)
                 // Ini mengupdate semua baris yang punya discord_id tersebut
                 await supabase
-                    .from('absensi_sapd')
+                    .from('absensi_sasg')
                     .update({
                         nama_anggota: freshName,
                         pangkat: userPangkat,
