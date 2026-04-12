@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SASG DASHBOARD</title>
+    <title>SASG Dashboard - Panel Anggota</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
     <style>
@@ -126,7 +126,12 @@
                 </div>
                 <div class="form-group">
                     <label>Bukti Foto (SS SAMP)</label>
-                    <input type="file" id="bukti_foto" accept="image/*">
+                    <input type="file" id="bukti_foto" accept="image/*" multiple style="display: none;">
+                    <button type="button" onclick="document.getElementById('bukti_foto').click()" style="width: 100%; padding: 10px; background: #30475e; color: white; border: 1px solid #444; border-radius: 8px; cursor: pointer;">
+                        Pilih Foto
+                    </button>
+                    
+                    <div id="preview-gallery" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;"></div>
                 </div>
             </div>
 
