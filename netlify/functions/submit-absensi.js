@@ -15,6 +15,7 @@ exports.handler = async (event) => {
     const discordId = reports[0].discord_id;
 
     // --- DAFTAR MAPPING PANGKAT & DIVISI ---
+    // --- DAFTAR MAPPING PANGKAT & DIVISI ---
     const PANGKAT_MAP = {
             "1391976318366650410": "GUBERUR",
             "1391976320266801343": "WAKIL GUBERNUR",
