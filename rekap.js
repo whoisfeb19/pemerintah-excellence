@@ -6,7 +6,7 @@
 function checkAuth() {
     const isAdmin = localStorage.getItem("is_admin");
     if (isAdmin !== "true") {
-        alert("AKSES DITOLAK: Halaman ini hanya untuk High Command (Admin).");
+        alert("AKSES DITOLAK: Halaman ini hanya untuk PETINGGI PEMERINTAH (Admin).");
         window.location.href = "dashboard.html";
     } else {
         document.body.style.display = "block";
@@ -113,12 +113,16 @@ async function loadData() {
 }
 
 // --- FITUR BARU: POPUP DETAIL DENGAN FIX LAYOUT ---
+// --- FITUR BARU: POPUP DETAIL DENGAN FIX LAYOUT & MULTI-IMAGE ---
 function openDetailPopup(nama, pangkat, data) {
     const modal = document.getElementById('modal-detail');
     const content = document.getElementById('detail-content');
     
     content.style.maxHeight = "80vh";
     content.style.overflowY = "auto";
+
+    // Pecah string bukti_foto menjadi array jika ada banyak gambar
+    const daftarGambar = data.bukti && data.bukti !== "N/A" ? data.bukti.split(', ') : [];
 
     content.innerHTML = `
         <div style="color: #eee; font-family: 'Segoe UI', sans-serif; padding: 5px;">
@@ -129,6 +133,22 @@ function openDetailPopup(nama, pangkat, data) {
                 .pop-label { width: 100px; color: #00adb5; font-weight: bold; flex-shrink: 0; }
                 .pop-colon { width: 20px; flex-shrink: 0; text-align: center; }
                 .pop-val { flex-grow: 1; word-break: break-word; overflow-wrap: anywhere; }
+                .img-thumbnail-container { 
+                    display: flex; 
+                    flex-wrap: wrap; 
+                    gap: 10px; 
+                    margin-top: 10px; 
+                }
+                .img-thumbnail { 
+                    width: 100px; 
+                    height: 100px; 
+                    object-fit: cover; 
+                    border-radius: 6px; 
+                    border: 2px solid #30475e; 
+                    cursor: pointer; 
+                    transition: transform 0.2s;
+                }
+                .img-thumbnail:hover { transform: scale(1.05); border-color: #00adb5; }
             </style>
 
             <div class="pop-row"><div class="pop-label">Nama</div><div class="pop-colon">:</div><div class="pop-val">${nama}</div></div>
@@ -145,12 +165,17 @@ function openDetailPopup(nama, pangkat, data) {
                 <div class="pop-val" style="font-style:italic; color:#bbb;">${data.alasan}</div>
             </div>
 
-            <div style="margin-top:20px;">
-                <p style="color:#00adb5; font-weight:bold; margin-bottom:10px; border-top: 1px solid #444; padding-top:10px;">Bukti Gambar:</p>
-                ${data.bukti ? 
-                    `<img src="${data.bukti}" style="width:100%; border-radius:8px; border:2px solid #30475e; box-shadow: 0 4px 15px rgba(0,0,0,0.5);" onclick="window.open('${data.bukti}', '_blank')">` : 
-                    `<div style="padding:20px; text-align:center; background:#222831; border-radius:8px; color:#666;">Tidak ada bukti gambar.</div>`
-                }
+            <div style="margin-top:20px; border-top: 1px solid #444; padding-top:10px;">
+                <p style="color:#00adb5; font-weight:bold; margin-bottom:10px;">Bukti Gambar (${daftarGambar.length}):</p>
+                <div class="img-thumbnail-container">
+                    ${daftarGambar.length > 0 ? 
+                        daftarGambar.map(url => `
+                            <img src="${url}" class="img-thumbnail" title="Klik untuk memperbesar" onclick="window.open('${url}', '_blank')">
+                        `).join('') : 
+                        `<div style="width:100%; padding:20px; text-align:center; background:#222831; border-radius:8px; color:#666;">Tidak ada bukti gambar.</div>`
+                    }
+                </div>
+                ${daftarGambar.length > 0 ? `<p style="font-size: 10px; color: #666; margin-top: 5px;">* Klik gambar untuk melihat ukuran penuh</p>` : ''}
             </div>
         </div>
     `;
@@ -227,7 +252,7 @@ async function removeWarning(discord_id, nama_anggota, pangkat_anggota, currentW
 async function updateDiscordList() {
     const { data: masters } = await _supabase.from('users_master').select('*');
     masters.sort((a, b) => (RANK_ORDER[a.pangkat.toUpperCase()] || 99) - (RANK_ORDER[b.pangkat.toUpperCase()] || 99));
-    let txt = "## 📊 DAFTAR TOTAL WARNING ANGGOTA SASG\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    let txt = "## 📊 DAFTAR TOTAL WARNING ANGGOTA PEMERINTAH\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
     masters.forEach(m => {
         const emoji = m.total_warning >= 3 ? "🔴" : (m.total_warning > 0 ? "🟡" : "🟢");
         txt += `${emoji} ${m.nama_anggota} (<@${m.discord_id}>) : \`${m.total_warning || 0} SP\`\n`;
@@ -253,7 +278,7 @@ function downloadExcel() {
     ws['!cols'] = [{wch:25}, {wch:20}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:8}, {wch:12}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Rekap");
-    XLSX.writeFile(wb, `Rekap_SASG.xlsx`);
+    XLSX.writeFile(wb, `Rekap_Pemerintah.xlsx`);
 }
 
 function downloadPDF() {
@@ -273,7 +298,7 @@ function downloadPDF() {
             }
         }
     });
-    doc.save(`Rekap_SASG.pdf`);
+    doc.save(`Rekap_Pemerintah.pdf`);
 }
 
 function getWeekRange(offset = 0) {
@@ -288,15 +313,45 @@ async function resetUser(id) {
     if (!confirm("Hapus data absensi & bukti gambar anggota ini di minggu ini?")) return;
     const { mon, sun } = getWeekRange(currentWeekOffset);
     
-    const { data: logs } = await _supabase.from('absensi_sasg').select('bukti_gambar').eq('discord_id', id).gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+    // 1. Ambil data log untuk mendapatkan URL gambar
+    const { data: logs } = await _supabase.from('absensi_sasg')
+        .select('bukti_foto') // Pastikan nama kolom sesuai (bukti_foto atau bukti_gambar)
+        .eq('discord_id', id)
+        .gte('created_at', mon.toISOString())
+        .lte('created_at', sun.toISOString());
+
     if (logs && logs.length > 0) {
-        const filesToRemove = logs.map(log => log.bukti_gambar ? `absensi/${log.bukti_gambar}` : null).filter(path => path !== null);
+        let filesToRemove = [];
+        
+        logs.forEach(log => {
+            if (log.bukti_foto && log.bukti_foto !== "N/A") {
+                // Pecah string jika ada banyak gambar (koma), lalu ambil nama filenya saja
+                const urls = log.bukti_foto.split(', ');
+                urls.forEach(url => {
+                    // Mengambil bagian setelah '/absensi/' untuk mendapatkan nama filenya
+                    const fileName = url.split('/absensi/')[1];
+                    if (fileName) filesToRemove.push(`absensi/${fileName}`);
+                });
+            }
+        });
+
+        // 2. Hapus dari Storage jika ada file
         if (filesToRemove.length > 0) {
-            await _supabase.storage.from('bukti-absen').remove(filesToRemove);
+            const { error: storageError } = await _supabase.storage
+                .from('bukti-absen')
+                .remove(filesToRemove);
+            
+            if(storageError) console.error("Gagal hapus gambar di storage:", storageError);
         }
     }
 
-    await _supabase.from('absensi_sasg').delete().eq('discord_id', id).gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+    // 3. Hapus data dari Database
+    await _supabase.from('absensi_sasg')
+        .delete()
+        .eq('discord_id', id)
+        .gte('created_at', mon.toISOString())
+        .lte('created_at', sun.toISOString());
+
     alert("Data dan Gambar berhasil dihapus!");
     loadData();
 }
@@ -304,14 +359,36 @@ async function resetUser(id) {
 async function resetAllWeeklyData() {
     if (!confirm("Hapus SEMUA data absensi & bukti gambar minggu ini?")) return;
     const { mon, sun } = getWeekRange(currentWeekOffset);
-    const { data: allLogs } = await _supabase.from('absensi_sasg').select('bukti_gambar').gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+
+    // 1. Ambil semua log minggu ini
+    const { data: allLogs } = await _supabase.from('absensi_sasg')
+        .select('bukti_foto')
+        .gte('created_at', mon.toISOString())
+        .lte('created_at', sun.toISOString());
+
     if (allLogs && allLogs.length > 0) {
-        const filesToRemove = allLogs.map(log => log.bukti_gambar ? `absensi/${log.bukti_gambar}` : null).filter(path => path !== null);
+        let filesToRemove = [];
+        allLogs.forEach(log => {
+            if (log.bukti_foto && log.bukti_foto !== "N/A") {
+                const urls = log.bukti_foto.split(', ');
+                urls.forEach(url => {
+                    const fileName = url.split('/absensi/')[1];
+                    if (fileName) filesToRemove.push(`absensi/${fileName}`);
+                });
+            }
+        });
+
         if (filesToRemove.length > 0) {
             await _supabase.storage.from('bukti-absen').remove(filesToRemove);
         }
     }
-    await _supabase.from('absensi_sasg').delete().gte('created_at', mon.toISOString()).lte('created_at', sun.toISOString());
+
+    // 2. Hapus dari Database
+    await _supabase.from('absensi_sasg')
+        .delete()
+        .gte('created_at', mon.toISOString())
+        .lte('created_at', sun.toISOString());
+
     alert("Seluruh data minggu ini telah dibersihkan!");
     loadData();
 }
