@@ -1,5 +1,5 @@
 /**
- * DASHBOARD.JS - VERSI SINKRONISASI OTOMATIS
+ * DASHBOARD.JS - VERSI FULL PROTEKSI ADMIN & SINKRONISASI
  */
 
 const _supabase = window.supabase.createClient(
@@ -15,9 +15,8 @@ window.onload = async () => {
     const name = urlParams.get('name');
     const rank = urlParams.get('pangkat');
     const divisi = urlParams.get('divisi');
-    const isAdmin = urlParams.get('admin') === 'true';
+    const isAdmin = urlParams.get('admin') === 'true'; 
 
-    // Simpan data dari URL jika ada (saat login pertama)
     if (discordId && name) {
         localStorage.setItem("discord_id", discordId);
         localStorage.setItem("nama_user", decodeURIComponent(name));
@@ -29,7 +28,8 @@ window.onload = async () => {
             discord_id: discordId,
             nama_anggota: decodeURIComponent(name),
             pangkat: decodeURIComponent(rank || "Unknown"),
-            divisi: decodeURIComponent(divisi || "-")
+            divisi: decodeURIComponent(divisi || "-"),
+            is_admin: isAdmin 
         }, { onConflict: 'discord_id' });
 
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -40,39 +40,79 @@ window.onload = async () => {
         return;
     }
 
-    // Jalankan update tampilan (sekarang memanggil database)
     await updateUI();
     toggleFormMode();
     updateGajiDisplay(); 
+    setupAdminProtection(); // Inisialisasi proteksi tombol rekap
 };
 
-// --- LOGIKA DASHBOARD DATA (SINKRON KE DATABASE) ---
+// --- LOGIKA PROTEKSI ADMIN (REAL-TIME) ---
+function setupAdminProtection() {
+    const adminLink = document.getElementById('admin-link');
+    if (!adminLink) return;
+
+    adminLink.onclick = async (e) => {
+        e.preventDefault();
+        const discId = localStorage.getItem("discord_id");
+        
+        // Simpan teks asli untuk loading state
+        const originalText = adminLink.innerHTML;
+        adminLink.innerHTML = "🔍 Verifikasi Akses...";
+        adminLink.style.pointerEvents = "none";
+
+        try {
+            // Tembak Netlify Function untuk cek role terbaru di Discord
+            const response = await fetch('/.netlify/functions/check-admin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ discordId: discId })
+            });
+
+            const result = await response.json();
+
+            if (response.status === 200 && result.isAdmin) {
+                // Jika masih admin, arahkan ke halaman rekap
+                window.location.href = "rekap.html";
+            } else {
+                // Jika role sudah dicabut
+                alert("⚠️ AKSES DITOLAK!\nRole Admin Anda telah dicabut di Discord. Tombol akses akan dihilangkan.");
+                localStorage.setItem("is_admin", "false");
+                adminLink.style.display = 'none';
+            }
+        } catch (err) {
+            alert("Gagal memverifikasi akses. Silakan coba lagi.");
+            adminLink.innerHTML = originalText;
+            adminLink.style.pointerEvents = "auto";
+        }
+    };
+}
+
+// --- LOGIKA DASHBOARD DATA ---
 async function updateUI() {
     const discId = localStorage.getItem("discord_id");
 
     try {
-        // AMBIL DATA TERBARU DARI DATABASE users_master
         const { data: user, error } = await _supabase
             .from('users_master')
-            .select('nama_anggota, pangkat, divisi')
+            .select('nama_anggota, pangkat, divisi, is_admin')
             .eq('discord_id', discId)
             .single();
 
         if (user && !error) {
-            // Update LocalStorage agar sinkron dengan Database
             localStorage.setItem("nama_user", user.nama_anggota);
             localStorage.setItem("pangkat", user.pangkat);
             localStorage.setItem("divisi", user.divisi);
+            localStorage.setItem("is_admin", user.is_admin);
         }
     } catch (e) { console.warn("Gagal sinkron database, menggunakan cache local."); }
 
-    // Tampilkan ke layar
     document.getElementById('name-display').innerText = localStorage.getItem("nama_user");
     document.getElementById('rank-display').innerText = `${localStorage.getItem("pangkat")} | ${localStorage.getItem("divisi")}`;
     
-    if (localStorage.getItem("is_admin") === "true") {
-        const adminLink = document.getElementById('admin-link');
-        if(adminLink) adminLink.style.display = 'block';
+    const adminLink = document.getElementById('admin-link');
+    if (adminLink) {
+        const currentAdminStatus = localStorage.getItem("is_admin");
+        adminLink.style.display = (currentAdminStatus === "true" || currentAdminStatus === true) ? 'block' : 'none';
     }
 }
 
@@ -101,7 +141,6 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
             dateList.push(tglVal);
         }
 
-        // UNGGAH BANYAK GAMBAR
         let allImgUrls = [];
         if (statusAbsen === "HADIR" && selectedFiles.length > 0) {
             btn.innerText = `Mengunggah ${selectedFiles.length} Foto...`;
@@ -136,7 +175,7 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
         const result = await response.json();
 
         if (response.status === 403) {
-            alert("Akses Ditolak! Anda bukan lagi bagian dari Pemerintah.");
+            alert("Akses Ditolak! Anda bukan lagi bagian dari Pemerintahan.");
             localStorage.clear();
             window.location.href = "index.html";
             return;
@@ -144,11 +183,11 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
 
         if (response.status !== 200) throw new Error("Gagal mengirim.");
 
-        // JIKA BERHASIL, UPDATE LOCALSTORAGE DENGAN DATA TERBARU DARI SERVER
         if (result.updatedData) {
             localStorage.setItem("nama_user", result.updatedData.name);
             localStorage.setItem("pangkat", result.updatedData.pangkat);
             localStorage.setItem("divisi", result.updatedData.divisi);
+            localStorage.setItem("is_admin", result.updatedData.isAdmin);
         }
 
         msg.innerText = "✔ Berhasil dikirim & Data Diperbarui!";
@@ -157,7 +196,7 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
         document.getElementById('absensi-form').reset();
         selectedFiles = [];
         renderPreview();
-        await updateUI(); // Update tampilan layar
+        await updateUI(); 
         updateGajiDisplay();
 
     } catch (err) {
@@ -169,7 +208,7 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
     }
 });
 
-// --- SISA FUNGSI LAINNYA (Preview, Gaji, dll tetap sama) ---
+// --- FUNGSI PENDUKUNG ---
 function renderPreview() {
     const gallery = document.getElementById('preview-gallery');
     gallery.innerHTML = "";
@@ -226,8 +265,13 @@ async function updateGajiDisplay() {
         }
         const h = hariHadirUnik.size;
         const totalInput = h + hariIzinUnik.size + hariCutiUnik.size;
-        const hasil = hitungGajiMember(pangkat, h);
-        document.getElementById('gaji-val').innerText = `$${hasil.gajiAkhir.toLocaleString()}`;
+        
+        // Asumsi fungsi hitungGajiMember tersedia secara global di file lain atau dashboard.html
+        if (typeof hitungGajiMember === "function") {
+            const hasil = hitungGajiMember(pangkat, h);
+            document.getElementById('gaji-val').innerText = `$${hasil.gajiAkhir.toLocaleString()}`;
+        }
+        
         document.getElementById('stat-hadir').innerText = h;
         document.getElementById('stat-izin').innerText = hariIzinUnik.size;
         document.getElementById('stat-cuti').innerText = hariCutiUnik.size;
@@ -242,6 +286,7 @@ function toggleFormMode() {
     const singleSec = document.getElementById('single-date-section');
     const rangeSec = document.getElementById('range-date-section');
     const tglInput = document.getElementById('tanggal_absen');
+    
     if (status === "HADIR") {
         singleSec.style.display = "block"; rangeSec.style.display = "none"; hadirSec.style.display = "block";
         tglInput.max = today;

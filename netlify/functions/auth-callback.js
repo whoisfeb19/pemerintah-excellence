@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// Inisialisasi Supabase menggunakan Environment Variables di Netlify
+// Inisialisasi Supabase menggunakan Environment Variables
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 exports.handler = async (event) => {
@@ -85,11 +85,19 @@ exports.handler = async (event) => {
             nama_anggota: displayName,
             pangkat: userPangkat,
             divisi: userDivisi,
+            is_admin: isAdmin, // <--- TAMBAHKAN INI
             last_login: new Date().toISOString()
-        });
+        }, { onConflict: 'discord_id' });
+
+        // --- TAMBAHAN: UPDATE OTOMATIS TABEL ABSENSI ---
+        // Ini memastikan riwayat absen lama ikut berubah mengikuti data Discord terbaru
+        await supabase.from('absensi_sasg').update({
+            nama_anggota: displayName,
+            pangkat: userPangkat,
+            divisi: userDivisi
+        }).eq('discord_id', userId);
 
         // 5. Redirect ke Dashboard dengan data yang sudah diverifikasi
-        // isAdmin dipaksa menjadi string 'true' atau 'false' agar mudah dibaca frontend
         const redirectUrl = `/dashboard.html?id=${userId}` +
                             `&name=${encodeURIComponent(displayName)}` +
                             `&pangkat=${encodeURIComponent(userPangkat)}` +
