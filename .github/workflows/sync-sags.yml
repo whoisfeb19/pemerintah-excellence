@@ -1,4 +1,7 @@
 name: SASG Member Sync
+concurrency:
+  group: sasg-bot-group
+  cancel-in-progress: true
 
 on:
   schedule:
