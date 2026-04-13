@@ -128,6 +128,12 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
     btn.innerText = "Memproses...";
 
     try {
+        // --- 1. VALIDASI FOTO KHUSUS HADIR ---
+        if (statusAbsen === "HADIR" && selectedFiles.length === 0) {
+            throw new Error("Wajib melampirkan bukti foto (SS SAMP) untuk status HADIR!");
+        }
+
+        // --- 2. PENENTUAN TANGGAL ---
         let dateList = [];
         if (statusAbsen === "CUTI") {
             let dStart = new Date(document.getElementById('cuti_mulai').value);
@@ -141,6 +147,7 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
             dateList.push(tglVal);
         }
 
+        // --- 3. PROSES UPLOAD FOTO (HANYA JIKA HADIR) ---
         let allImgUrls = [];
         if (statusAbsen === "HADIR" && selectedFiles.length > 0) {
             btn.innerText = `Mengunggah ${selectedFiles.length} Foto...`;
@@ -152,7 +159,22 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
             }
         }
 
+        // Jika bukan HADIR, otomatis jadi "N/A"
         const finalImgString = allImgUrls.length > 0 ? allImgUrls.join(", ") : "N/A";
+
+        // --- 4. PENYUSUNAN LAPORAN ---
+        // --- 4. PENYUSUNAN LAPORAN (VERSI FIX) ---
+
+        // Tentukan nilai jam_duty di luar map agar lebih stabil
+        let jamDutyFix;
+        if (statusAbsen === "HADIR") {
+            const mulai = document.getElementById('jam_mulai').value;
+            const selesai = document.getElementById('jam_selesai').value;
+            jamDutyFix = `${mulai} - ${selesai}`;
+        } else {
+            // Jika status adalah CUTI atau IZIN, gunakan nilainya sebagai teks jam_duty
+            jamDutyFix = statusAbsen; 
+        }
 
         const reports = dateList.map(d => ({
             discord_id: discordId,
@@ -160,8 +182,8 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
             pangkat: localStorage.getItem("pangkat"),
             divisi: localStorage.getItem("divisi"),
             tipe_absen: statusAbsen, 
-            jam_duty: (statusAbsen === "HADIR") ? `${document.getElementById('jam_mulai').value} - ${document.getElementById('jam_selesai').value}` : null,
-            alasan: document.getElementById('kegiatan').value,
+            jam_duty: jamDutyFix, // Menggunakan variabel yang sudah diproses di atas
+            alasan: document.getElementById('kegiatan').value || "-", // Antisipasi jika alasan kosong
             bukti_foto: finalImgString, 
             created_at: d.toISOString()
         }));
@@ -175,7 +197,7 @@ document.getElementById('absensi-form').addEventListener('submit', async (e) => 
         const result = await response.json();
 
         if (response.status === 403) {
-            alert("Akses Ditolak! Anda bukan lagi bagian dari Pemerintahan.");
+            alert("Akses Ditolak! Anda bukan lagi bagian dari Anggota Pemerintahan.");
             localStorage.clear();
             window.location.href = "index.html";
             return;
