@@ -108,10 +108,10 @@ async function runSasgTask() {
         if (channel) {
             // Cek jika jam 19:30 - 19:40 (dibatasi agar tidak spam setiap menit dalam jam tersebut)
             if (jam === 19 && menit >= 30 && menit <= 40) { 
-                await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://san-andreas-police-departement.netlify.app/\n\n@everyone");
+                await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://exsg.netlify.app/\n\n@everyone");
             } 
             else if (jam === 22 && menit <= 10) {
-                await channel.send("📢 **REMINDER ABSENSI**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN DI https://san-andreas-police-departement.netlify.app/\n\n@everyone");
+                await channel.send("📢 **REMINDER ABSENSI**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN DI https://exsg.netlify.app/\n\n@everyone");
             }
         }
     } catch (err) {
