@@ -162,7 +162,7 @@ async function cleanupUsersWithoutRole(guild) {
             }
 
             // Jeda untuk avoid rate limit
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         console.log(`[CLEANUP-1] Selesai. Total dihapus: ${cleanupCount} user`);
@@ -259,7 +259,7 @@ async function cleanupOrphanedAbsences(guild) {
             }
 
             // Jeda untuk avoid rate limit
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         console.log(`[CLEANUP-2] Selesai. Total dihapus: ${orphanedCount} data absensi orphaned`);
@@ -333,7 +333,7 @@ async function markThreadAsArchived(guild) {
             }
 
             // Jeda untuk avoid rate limit
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         console.log(`[ARCHIVE-THREAD] Selesai. Total thread di-archive: ${markedCount}`);
