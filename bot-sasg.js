@@ -71,11 +71,11 @@ function isValidUrl(url) {
 }
 
 // --- FUNGSI 1: CLEANUP USER YANG TIDAK PUNYA REQUIRED ROLE DARI USERS_MASTER ---
-// --- FUNGSI 1: CLEANUP USER YANG TIDAK PUNYA REQUIRED ROLE DARI USERS_MASTER ---
 async function cleanupUsersWithoutRole(guild) {
     console.log("[CLEANUP-1] Memulai cleanup user tanpa required role dari users_master...");
     
     try {
+        // 1. AMBIL SEMUA USER DI users_master
         const { data: allUsersInDb, error: fetchErr } = await supabase
             .from('users_master')
             .select('discord_id');
@@ -92,82 +92,77 @@ async function cleanupUsersWithoutRole(guild) {
 
         let cleanupCount = 0;
 
+        // 2. PROSES SETIAP USER
         for (const userRecord of allUsersInDb) {
             const discordId = userRecord.discord_id;
             
             try {
+                // Cek apakah user masih ada di Discord & punya required role
                 const member = await guild.members.fetch(discordId).catch(() => null);
                 
-                // ✅ FIX: Check null terlebih dahulu
-                if (!member) {
-                    console.log(`[CLEANUP-1] User ${discordId} tidak ada di Discord, menghapus...`);
-                } else if (!member.roles.cache.has(REQUIRED_ROLE_ID)) {
+                if (!member || !member.roles.cache.has(REQUIRED_ROLE_ID)) {
                     console.log(`[CLEANUP-1] User ${discordId} tidak punya required role, menghapus...`);
-                } else {
-                    // User valid, skip
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    continue;
-                }
 
-                // 2A. HAPUS GAMBAR BUKTI DARI STORAGE
-                const { data: absenRecords, error: absenErr } = await supabase
-                    .from('absensi_sasg')
-                    .select('id, bukti_foto')
-                    .eq('discord_id', discordId);
+                    // 2A. HAPUS GAMBAR BUKTI DARI STORAGE
+                    const { data: absenRecords, error: absenErr } = await supabase
+                        .from('absensi_sasg')
+                        .select('id, bukti_foto')
+                        .eq('discord_id', discordId);
 
-                if (!absenErr && absenRecords && absenRecords.length > 0) {
-                    for (const record of absenRecords) {
-                        if (record.bukti_foto && isValidUrl(record.bukti_foto)) {
-                            try {
-                                const namaFile = record.bukti_foto.split('/').pop();
-                                const pathLengkap = `absensi/${namaFile}`;
-                                
-                                const { error: delStorageErr } = await supabase.storage
-                                    .from(STORAGE_BUCKET_NAME)
-                                    .remove([pathLengkap]);
-                                
-                                if (!delStorageErr) {
-                                    console.log(`  ✓ Gambar dihapus: ${namaFile}`);
-                                } else {
-                                    console.warn(`  ⚠ Gagal hapus gambar ${namaFile}: ${delStorageErr.message}`);
+                    if (!absenErr && absenRecords && absenRecords.length > 0) {
+                        for (const record of absenRecords) {
+                            if (record.bukti_foto && isValidUrl(record.bukti_foto)) {
+                                try {
+                                    const namaFile = record.bukti_foto.split('/').pop();
+                                    const pathLengkap = `absensi/${namaFile}`;
+                                    
+                                    const { error: delStorageErr } = await supabase.storage
+                                        .from(STORAGE_BUCKET_NAME)
+                                        .remove([pathLengkap]);
+                                    
+                                    if (!delStorageErr) {
+                                        console.log(`  ✓ Gambar dihapus: ${namaFile}`);
+                                    } else {
+                                        console.warn(`  ⚠ Gagal hapus gambar ${namaFile}: ${delStorageErr.message}`);
+                                    }
+                                } catch (imgErr) {
+                                    console.warn(`  ⚠ Error hapus gambar:`, imgErr.message);
                                 }
-                                await new Promise(resolve => setTimeout(resolve, 500)); // ← Increase delay
-                            } catch (imgErr) {
-                                console.warn(`  ⚠ Error hapus gambar:`, imgErr.message);
                             }
                         }
                     }
-                }
 
-                // 2B. HAPUS SEMUA DATA ABSENSI USER
-                const { error: delAbsenErr } = await supabase
-                    .from('absensi_sasg')
-                    .delete()
-                    .eq('discord_id', discordId);
+                    // 2B. HAPUS SEMUA DATA ABSENSI USER
+                    const { error: delAbsenErr } = await supabase
+                        .from('absensi_sasg')
+                        .delete()
+                        .eq('discord_id', discordId);
 
-                if (!delAbsenErr) {
-                    console.log(`  ✓ Data absensi dihapus`);
-                } else {
-                    console.warn(`  ⚠ Gagal hapus absensi: ${delAbsenErr.message}`);
-                }
+                    if (!delAbsenErr) {
+                        console.log(`  ✓ Data absensi dihapus`);
+                    } else {
+                        console.warn(`  ⚠ Gagal hapus absensi: ${delAbsenErr.message}`);
+                    }
 
-                // 2C. HAPUS USER DARI users_master
-                const { error: delUserErr } = await supabase
-                    .from('users_master')
-                    .delete()
-                    .eq('discord_id', discordId);
+                    // 2C. HAPUS USER DARI users_master
+                    const { error: delUserErr } = await supabase
+                        .from('users_master')
+                        .delete()
+                        .eq('discord_id', discordId);
 
-                if (!delUserErr) {
-                    console.log(`  ✓ User ${discordId} dihapus dari users_master`);
-                    cleanupCount++;
-                } else {
-                    console.warn(`  ⚠ Gagal hapus user: ${delUserErr.message}`);
+                    if (!delUserErr) {
+                        console.log(`  ✓ User ${discordId} dihapus dari users_master`);
+                        cleanupCount++;
+                    } else {
+                        console.warn(`  ⚠ Gagal hapus user: ${delUserErr.message}`);
+                    }
                 }
             } catch (err) {
                 console.error(`  ✗ Error cleanup user ${discordId}:`, err.message);
             }
 
-            await new Promise(resolve => setTimeout(resolve, 500)); // ← Increase delay
+            // Jeda untuk avoid rate limit
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
 
         console.log(`[CLEANUP-1] Selesai. Total dihapus: ${cleanupCount} user`);
@@ -181,6 +176,7 @@ async function cleanupOrphanedAbsences(guild) {
     console.log("[CLEANUP-2] Memulai cleanup data absensi yang orphaned...");
     
     try {
+        // 1. AMBIL SEMUA USER DI users_master
         const { data: validUsers, error: fetchValidErr } = await supabase
             .from('users_master')
             .select('discord_id');
@@ -192,6 +188,7 @@ async function cleanupOrphanedAbsences(guild) {
 
         const validUserIds = validUsers ? validUsers.map(u => u.discord_id) : [];
 
+        // 2. AMBIL SEMUA DATA DI absensi_sasg
         const { data: allAbsences, error: fetchAbsenErr } = await supabase
             .from('absensi_sasg')
             .select('id, discord_id, bukti_foto');
@@ -208,19 +205,23 @@ async function cleanupOrphanedAbsences(guild) {
 
         let orphanedCount = 0;
 
+        // 3. CARI DATA ABSENSI YANG USERNYA TIDAK ADA DI users_master
         for (const absenceRecord of allAbsences) {
             const discordId = absenceRecord.discord_id;
 
             try {
+                // Cek apakah user ada di users_master
                 const userExistsInDb = validUserIds.includes(discordId);
                 
-                // ✅ FIX: Check null terlebih dahulu
+                // Cek apakah user masih ada di Discord & punya required role
                 const member = await guild.members.fetch(discordId).catch(() => null);
                 const hasRequiredRole = member ? member.roles.cache.has(REQUIRED_ROLE_ID) : false;
 
+                // Jika user tidak ada di DB dan tidak punya required role, hapus absensi
                 if (!userExistsInDb && !hasRequiredRole) {
                     console.log(`[CLEANUP-2] Data absensi ${absenceRecord.id} (user: ${discordId}) orphaned, menghapus...`);
 
+                    // 3A. HAPUS GAMBAR BUKTI JIKA ADA & VALID
                     if (absenceRecord.bukti_foto && isValidUrl(absenceRecord.bukti_foto)) {
                         try {
                             const namaFile = absenceRecord.bukti_foto.split('/').pop();
@@ -235,12 +236,12 @@ async function cleanupOrphanedAbsences(guild) {
                             } else {
                                 console.warn(`  ⚠ Gagal hapus gambar: ${delStorageErr.message}`);
                             }
-                            await new Promise(resolve => setTimeout(resolve, 500)); // ← Increase delay
                         } catch (imgErr) {
                             console.warn(`  ⚠ Error hapus gambar:`, imgErr.message);
                         }
                     }
 
+                    // 3B. HAPUS DATA ABSENSI
                     const { error: delAbsenErr } = await supabase
                         .from('absensi_sasg')
                         .delete()
@@ -257,7 +258,8 @@ async function cleanupOrphanedAbsences(guild) {
                 console.error(`  ✗ Error cleanup absensi ${absenceRecord.id}:`, err.message);
             }
 
-            await new Promise(resolve => setTimeout(resolve, 500)); // ← Increase delay
+            // Jeda untuk avoid rate limit
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
 
         console.log(`[CLEANUP-2] Selesai. Total dihapus: ${orphanedCount} data absensi orphaned`);
