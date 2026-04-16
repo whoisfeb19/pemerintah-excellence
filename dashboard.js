@@ -3,8 +3,8 @@
  */
 
 const _supabase = window.supabase.createClient(
-    "https://knldblqwaumehhwaodmn.supabase.co", 
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtubGRibHF3YXVtZWhod2FvZG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4OTIwNzIsImV4cCI6MjA5MTQ2ODA3Mn0.EdMpVA8E4Vax8FCwJcKAJx-f-d80ysGWRsGLSAS_q3I"
+    "https://agwkwpypqnjwlodlquhy.supabase.co", 
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnd2t3cHlwcW5qd2xvZGxxdWh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4Mzk5ODcsImV4cCI6MjA5MTQxNTk4N30.vhPqPCtnBLG1YXMB8ZJKsC4FwQSqO3Qxy4S9uKxa6Xo"
 );
 
 let selectedFiles = [];
