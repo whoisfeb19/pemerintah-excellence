@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 
 // 1. INISIALISASI KONEKSI
@@ -34,24 +34,36 @@ const DIVISI_MAP = {
 
 // ID Channel untuk pengumuman dan logs (DEFINISI MANUAL)
 const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376"; 
-const LOG_CHANNEL_ID = "1494352421294444595";
+const LOG_CHANNEL_ID = "1494352421294444595"; // Forum Channel ID
 const REQUIRED_ROLE_ID = "1492398964610170940";
 const ADMIN_ROLE_ID = "1492400977012068363";
 const DISCORD_GUILD_ID = "1391854057487863998";
 
-// ===== FUNGSI LOGGING =====
+// ===== FUNGSI LOGGING UNTUK FORUM CHANNEL =====
 async function sendLog(message, type = 'info') {
     try {
         const channel = await client.channels.fetch(LOG_CHANNEL_ID);
-        if (!channel || !channel.isTextBased()) {
-            console.warn("⚠️ Channel logs tidak ditemukan atau bukan text channel!");
+        
+        // Validasi adalah forum channel
+        if (!channel || channel.type !== ChannelType.GuildForum) {
+            console.warn("⚠️ Channel logs bukan forum channel!");
             return;
         }
 
         const timestamp = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
         const emoji = type === 'delete' ? '🗑️' : type === 'warning' ? '⚠️' : 'ℹ️';
-        
-        await channel.send(`${emoji} **[${timestamp}]** ${message}`);
+        const title = `${emoji} [${timestamp}] Bot Log`;
+        const content = message;
+
+        // Buat thread baru di forum
+        const thread = await channel.threads.create({
+            name: title,
+            message: {
+                content: content
+            }
+        });
+
+        console.log(`📤 Log dikirim ke forum: ${title}`);
     } catch (err) {
         console.error("❌ Gagal mengirim log:", err.message);
     }
@@ -243,7 +255,7 @@ async function runSasgTask() {
 
         await Promise.all(updateTasks);
 
-        // Hapus users yang tidak lagi punya required role (FIX: TANPA KUTIP)
+        // Hapus users yang tidak lagi punya required role
         if (activeDiscordIds.length > 0) {
             const { error: deleteError } = await supabase
                 .from('users_master')
@@ -293,9 +305,9 @@ async function runSasgTask() {
     }
 }
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     console.log(`\n🤖 Bot Pengecek SASG aktif sebagai ${client.user.tag}`);
-    console.log("📋 Fitur aktif: Sync, Role Checking, Orphaned Cleanup, Auto Logging");
+    console.log("📋 Fitur aktif: Sync, Role Checking, Orphaned Cleanup, Auto Logging (Forum)");
     console.log("⚙️  Interval: Setiap 10 menit\n");
     
     // Jalankan tugas pertama kali saat bot nyala
