@@ -1,19 +1,38 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { 
+    Client, 
+    GatewayIntentBits, 
+    EmbedBuilder, 
+    ChannelType, 
+    Partials 
+} = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 
-// 1. INISIALISASI KONEKSI
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+// --- KONFIGURASI SUPABASE ---
+const supabaseUrl = "https://agwkwpypqnjwlodlquhy.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnd2t3cHlwcW5qd2xvZGxxdWh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4Mzk5ODcsImV4cCI6MjA5MTQxNTk4N30.vhPqPCtnBLG1YXMB8ZJKsC4FwQSqO3Qxy4S9uKxa6Xo";
+const supabase = createClient(supabaseUrl, supabaseKey);
 
+// --- INISIALISASI CLIENT DISCORD ---
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages
-    ] 
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ],
+    partials: [Partials.Channel]
 });
 
-// Mapping Pangkat
+// --- DAFTAR ID (KONFIGURASI) ---
+const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376"; 
+const FORUM_CHANNEL_ID = "1494352421294444595"; 
+const STORAGE_BUCKET_NAME = "bukti-hadir"; 
+const REQUIRED_ROLE_ID = "1492398964610170940"; 
+const ADMIN_ROLE_ID = "1444910578266148897"; 
+const DISCORD_GUILD_ID = "1391854057487863998";
+
+// --- MAPPING PANGKAT ---
 const PANGKAT_MAP = {
     "1391976318366650410": "GUBERUR",
     "1391976320266801343": "WAKIL GUBERNUR",
@@ -24,6 +43,7 @@ const PANGKAT_MAP = {
     "1492398633679585393": "STAFF MAGANG"
 };
 
+// --- MAPPING DIVISI ---
 const DIVISI_MAP = {
     "1444921188215165141": "HIGHWAY PATROL",
     "1444920955620032533": "RAMPART DIVISION",
@@ -31,139 +51,605 @@ const DIVISI_MAP = {
     "1444908272363769887": "HUMAN RESOURCE BUREAU",
     "1444921352120434819": "INTERNAL AFFAIRS DIVISION"
 };
-
-// ID Channel untuk pengumuman
-const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376"; 
-const REQUIRED_ROLE_ID = "1492398964610170940";
-const ADMIN_ROLE_ID = "1492400977012068363"; // CONTOH: ID Role Chief (Sesuaikan dengan ID Role Admin/High Command kamu)
-
-
-// --- FUNGSI TAMBAHAN: CEK ABSENSI ---
-async function checkMissingAbsence(channel) {
+// --- FUNGSI VALIDASI URL ---
+function isValidUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    
+    // Trim whitespace
+    url = url.trim();
+    
+    // Check if starts with http
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+    
     try {
-        // Ambil semua user dari master
-        const { data: allUsers, error: errUsers } = await supabase.from('users_master').select('discord_id');
-        if (errUsers) throw errUsers;
-
-        // Ambil data absen hari ini (WIB)
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-
-        const { data: attendedToday, error: errAbsen } = await supabase
-            .from('absensi_sasg')
-            .select('discord_id')
-            .gte('created_at', startOfDay.toISOString());
-
-        if (errAbsen) throw errAbsen;
-
-        const attendedIds = attendedToday.map(u => u.discord_id);
-        const slackingUsers = allUsers.filter(u => !attendedIds.includes(u.discord_id));
-
-        if (slackingUsers.length > 0) {
-            const mentions = slackingUsers.map(u => `<@${u.discord_id}>`).join(' ');
-            await channel.send(`⚠️ **REMINDER**\nAnggota berikut belum melakukan absensi hari ini:\n${mentions}\n\nSegera lakukan absensi di: https://san-andreas-police-departement.netlify.app/\n@everyona`);
-        } else {
-            await channel.send("✅ **REMINDER**: Semua anggota sudah melakukan absensi.\n@everyone");
-        }
-    } catch (err) {
-        console.error("Gagal melakukan pengecekan absensi:", err.message);
+        new URL(url);
+        return true;
+    } catch (e) {
+        return false;
     }
 }
 
-// 4. FUNGSI UTAMA PENGECEKAN
-async function runSasgTask() {
-    console.log(`[${new Date().toLocaleString('id-ID')}] Memulai tugas rutin SASG...`);
+// --- FUNGSI 1: CLEANUP USER YANG TIDAK PUNYA REQUIRED ROLE DARI USERS_MASTER ---
+async function cleanupUsersWithoutRole(guild) {
+    console.log("[CLEANUP-1] Memulai cleanup user tanpa required role dari users_master...");
     
-    const guild = client.guilds.cache.get(process.env.DISCORD_GUILD_ID);
-    if (!guild) return console.error("Error: Server Discord tidak ditemukan!");
-
     try {
-        // --- SINKRONISASI DATA ---
-        const members = await guild.members.fetch();
-        const dataToUpsert = [];
-        const activeDiscordIds = [];
-        const updateTasks = [];
+        // 1. AMBIL SEMUA USER DI users_master
+        const { data: allUsersInDb, error: fetchErr } = await supabase
+            .from('users_master')
+            .select('discord_id');
 
-        for (const [id, member] of members) {
-            if (member.roles.cache.has(REQUIRED_ROLE_ID)) {
-                let userPangkat = "-";
-                let userDivisi = "-";
+        if (fetchErr) {
+            console.error("[DB ERROR] Gagal fetch users_master:", fetchErr.message);
+            return;
+        }
 
-                member.roles.cache.forEach(role => {
-                    if (PANGKAT_MAP[role.id]) userPangkat = PANGKAT_MAP[role.id];
-                    if (DIVISI_MAP[role.id]) userDivisi = DIVISI_MAP[role.id];
-                });
+        if (!allUsersInDb || allUsersInDb.length === 0) {
+            console.log("[CLEANUP-1] users_master kosong.");
+            return;
+        }
 
-                const freshName = member.nickname || member.user.globalName || member.user.username;
-                activeDiscordIds.push(member.id);
-                const isUserAdmin = member.roles.cache.has(ADMIN_ROLE_ID);
+        let cleanupCount = 0;
 
-                updateTasks.push(
-                    supabase.from('absensi_sasg').update({
-                        nama_anggota: freshName,
-                        pangkat: userPangkat,
-                        divisi: userDivisi
-                    }).eq('discord_id', member.id)
+        // 2. PROSES SETIAP USER
+        for (const userRecord of allUsersInDb) {
+            const discordId = userRecord.discord_id;
+            
+            try {
+                // Cek apakah user masih ada di Discord & punya required role
+                const member = await guild.members.fetch(discordId).catch(() => null);
+                
+                if (!member || !member.roles.cache.has(REQUIRED_ROLE_ID)) {
+                    console.log(`[CLEANUP-1] User ${discordId} tidak punya required role, menghapus...`);
+
+                    // 2A. HAPUS GAMBAR BUKTI DARI STORAGE
+                    const { data: absenRecords, error: absenErr } = await supabase
+                        .from('absensi_sasg')
+                        .select('id, bukti_foto')
+                        .eq('discord_id', discordId);
+
+                    if (!absenErr && absenRecords && absenRecords.length > 0) {
+                        for (const record of absenRecords) {
+                            if (record.bukti_foto && isValidUrl(record.bukti_foto)) {
+                                try {
+                                    const namaFile = record.bukti_foto.split('/').pop();
+                                    const pathLengkap = `absensi/${namaFile}`;
+                                    
+                                    const { error: delStorageErr } = await supabase.storage
+                                        .from(STORAGE_BUCKET_NAME)
+                                        .remove([pathLengkap]);
+                                    
+                                    if (!delStorageErr) {
+                                        console.log(`  ✓ Gambar dihapus: ${namaFile}`);
+                                    } else {
+                                        console.warn(`  ⚠ Gagal hapus gambar ${namaFile}: ${delStorageErr.message}`);
+                                    }
+                                } catch (imgErr) {
+                                    console.warn(`  ⚠ Error hapus gambar:`, imgErr.message);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2B. HAPUS SEMUA DATA ABSENSI USER
+                    const { error: delAbsenErr } = await supabase
+                        .from('absensi_sasg')
+                        .delete()
+                        .eq('discord_id', discordId);
+
+                    if (!delAbsenErr) {
+                        console.log(`  ✓ Data absensi dihapus`);
+                    } else {
+                        console.warn(`  ⚠ Gagal hapus absensi: ${delAbsenErr.message}`);
+                    }
+
+                    // 2C. HAPUS USER DARI users_master
+                    const { error: delUserErr } = await supabase
+                        .from('users_master')
+                        .delete()
+                        .eq('discord_id', discordId);
+
+                    if (!delUserErr) {
+                        console.log(`  ✓ User ${discordId} dihapus dari users_master`);
+                        cleanupCount++;
+                    } else {
+                        console.warn(`  ⚠ Gagal hapus user: ${delUserErr.message}`);
+                    }
+                }
+            } catch (err) {
+                console.error(`  ✗ Error cleanup user ${discordId}:`, err.message);
+            }
+
+            // Jeda untuk avoid rate limit
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+
+        console.log(`[CLEANUP-1] Selesai. Total dihapus: ${cleanupCount} user`);
+    } catch (errGlobal) {
+        console.error("[CRITICAL ERROR] cleanupUsersWithoutRole:", errGlobal.message);
+    }
+}
+
+// --- FUNGSI 2: CLEANUP ABSENSI DARI USER YANG SUDAH TIDAK ADA DI USERS_MASTER ---
+async function cleanupOrphanedAbsences(guild) {
+    console.log("[CLEANUP-2] Memulai cleanup data absensi yang orphaned...");
+    
+    try {
+        // 1. AMBIL SEMUA USER DI users_master
+        const { data: validUsers, error: fetchValidErr } = await supabase
+            .from('users_master')
+            .select('discord_id');
+
+        if (fetchValidErr) {
+            console.error("[DB ERROR] Gagal fetch users_master:", fetchValidErr.message);
+            return;
+        }
+
+        const validUserIds = validUsers ? validUsers.map(u => u.discord_id) : [];
+
+        // 2. AMBIL SEMUA DATA DI absensi_sasg
+        const { data: allAbsences, error: fetchAbsenErr } = await supabase
+            .from('absensi_sasg')
+            .select('id, discord_id, bukti_foto');
+
+        if (fetchAbsenErr) {
+            console.error("[DB ERROR] Gagal fetch absensi_sasg:", fetchAbsenErr.message);
+            return;
+        }
+
+        if (!allAbsences || allAbsences.length === 0) {
+            console.log("[CLEANUP-2] Tidak ada data absensi.");
+            return;
+        }
+
+        let orphanedCount = 0;
+
+        // 3. CARI DATA ABSENSI YANG USERNYA TIDAK ADA DI users_master
+        for (const absenceRecord of allAbsences) {
+            const discordId = absenceRecord.discord_id;
+
+            try {
+                // Cek apakah user ada di users_master
+                const userExistsInDb = validUserIds.includes(discordId);
+                
+                // Cek apakah user masih ada di Discord & punya required role
+                const member = await guild.members.fetch(discordId).catch(() => null);
+                const hasRequiredRole = member ? member.roles.cache.has(REQUIRED_ROLE_ID) : false;
+
+                // Jika user tidak ada di DB dan tidak punya required role, hapus absensi
+                if (!userExistsInDb && !hasRequiredRole) {
+                    console.log(`[CLEANUP-2] Data absensi ${absenceRecord.id} (user: ${discordId}) orphaned, menghapus...`);
+
+                    // 3A. HAPUS GAMBAR BUKTI JIKA ADA & VALID
+                    if (absenceRecord.bukti_foto && isValidUrl(absenceRecord.bukti_foto)) {
+                        try {
+                            const namaFile = absenceRecord.bukti_foto.split('/').pop();
+                            const pathLengkap = `absensi/${namaFile}`;
+                            
+                            const { error: delStorageErr } = await supabase.storage
+                                .from(STORAGE_BUCKET_NAME)
+                                .remove([pathLengkap]);
+                            
+                            if (!delStorageErr) {
+                                console.log(`  ✓ Gambar dihapus: ${namaFile}`);
+                            } else {
+                                console.warn(`  ⚠ Gagal hapus gambar: ${delStorageErr.message}`);
+                            }
+                        } catch (imgErr) {
+                            console.warn(`  ⚠ Error hapus gambar:`, imgErr.message);
+                        }
+                    }
+
+                    // 3B. HAPUS DATA ABSENSI
+                    const { error: delAbsenErr } = await supabase
+                        .from('absensi_sasg')
+                        .delete()
+                        .eq('id', absenceRecord.id);
+
+                    if (!delAbsenErr) {
+                        console.log(`  ✓ Data absensi ID ${absenceRecord.id} dihapus`);
+                        orphanedCount++;
+                    } else {
+                        console.warn(`  ⚠ Gagal hapus absensi: ${delAbsenErr.message}`);
+                    }
+                }
+            } catch (err) {
+                console.error(`  ✗ Error cleanup absensi ${absenceRecord.id}:`, err.message);
+            }
+
+            // Jeda untuk avoid rate limit
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+
+        console.log(`[CLEANUP-2] Selesai. Total dihapus: ${orphanedCount} data absensi orphaned`);
+    } catch (errGlobal) {
+        console.error("[CRITICAL ERROR] cleanupOrphanedAbsences:", errGlobal.message);
+    }
+}
+
+// --- FUNGSI 3: TANDAI THREAD SEBAGAI ARCHIVED UNTUK USER YANG TIDAK AKTIF ---
+async function markThreadAsArchived(guild) {
+    console.log("[ARCHIVE-THREAD] Memulai marking thread user yang tidak aktif...");
+    
+    try {
+        const forumChannel = await guild.channels.fetch(FORUM_CHANNEL_ID);
+        if (!forumChannel) {
+            console.error("[ERROR] Channel Forum tidak ditemukan.");
+            return;
+        }
+
+        // Ambil user valid dari users_master (yang masih punya role)
+        const { data: validUsers, error: fetchErr } = await supabase
+            .from('users_master')
+            .select('discord_id');
+
+        if (fetchErr) {
+            console.error("[DB ERROR]", fetchErr.message);
+            return;
+        }
+
+        const validUserIds = validUsers ? validUsers.map(u => u.discord_id) : [];
+
+        // Ambil semua thread
+        const threads = await forumChannel.threads.fetchActive();
+
+        let markedCount = 0;
+
+        for (const [, thread] of threads.threads) {
+            // Ekstrak discord ID dari nama thread
+            const idMatch = thread.name.match(/^\[(\d+)\]/);
+            
+            if (!idMatch) continue;
+
+            const discordId = idMatch[1];
+
+            try {
+                // KONDISI 1: User tidak ada di users_master
+                const userInDb = validUserIds.includes(discordId);
+
+                // KONDISI 2: User tidak ada di Discord atau tidak punya required role
+                const member = await guild.members.fetch(discordId).catch(() => null);
+                const userInDiscord = member ? member.roles.cache.has(REQUIRED_ROLE_ID) : false;
+
+                // Jika TIDAK ada di DB ATAU TIDAK punya required role → tandai archived
+                if (!userInDb || !userInDiscord) {
+                    if (!thread.name.includes('[ARCHIVED]')) {
+                        const newName = `[ARCHIVED] ${thread.name}`.substring(0, 100);
+                        
+                        const reason = !userInDb ? "tidak ada di users_master" : "tidak punya required role";
+                        console.log(`[ARCHIVE-THREAD] Tandai thread (${reason}): "${thread.name}" → "${newName}"`);
+                        
+                        try {
+                            await thread.edit({ name: newName });
+                            markedCount++;
+                        } catch (err) {
+                            console.warn(`[WARN] Gagal update thread: ${err.message}`);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`[ERROR] Gagal proses thread: ${err.message}`);
+            }
+
+            // Jeda untuk avoid rate limit
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+
+        console.log(`[ARCHIVE-THREAD] Selesai. Total thread di-archive: ${markedCount}`);
+    } catch (err) {
+        console.error("[CRITICAL ERROR] markThreadAsArchived:", err.message);
+    }
+}
+
+// --- FUNGSI UNTUK PROSES FORUM LOGS ---
+async function processForumLogs(guild) {
+    console.log("[DEBUG] Memulai proses pengecekan forum logs...");
+    
+    try {
+        const forumChannel = await guild.channels.fetch(FORUM_CHANNEL_ID);
+        if (!forumChannel) {
+            console.error("[ERROR] Channel Forum tidak ditemukan.");
+            return;
+        }
+
+        const { data: logs, error: fetchError } = await supabase
+            .from('absensi_sasg')
+            .select('*')
+            .eq('is_archived', false);
+
+        if (fetchError) {
+            console.error("[DATABASE ERROR]", fetchError.message);
+            return;
+        }
+
+        if (!logs || logs.length === 0) {
+            console.log("[INFO] Tidak ada data absensi baru untuk dikirim.");
+            return;
+        }
+
+        for (let i = 0; i < logs.length; i++) {
+            const log = logs[i];
+            
+            try {
+                const statusKirim = log.tipe_absen || "HADIR";
+                const alasanKirim = log.alasan || "Tidak ada keterangan";
+                const namaUser = log.nama_anggota || "Unknown";
+                const discordId = log.discord_id;
+
+                const threads = await forumChannel.threads.fetchActive();
+                
+                // === CARI THREAD BERDASARKAN DISCORD_ID ===
+                let targetThread = threads.threads.find(t => 
+                    t.name.includes(`[${discordId}]`)
                 );
 
-                dataToUpsert.push({
+                if (!targetThread) {
+                    console.log(`[INFO] Membuat thread baru untuk ${namaUser} (ID: ${discordId})`);
+                    targetThread = await forumChannel.threads.create({
+                        name: `[${discordId}] ${namaUser}`.substring(0, 100),
+                        message: { content: `Logs Kehadiran Resmi - **${namaUser}**` },
+                    });
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                    // === UPDATE NAMA THREAD JIKA ADA PERUBAHAN NAMA ===
+                    const currentName = `[${discordId}] ${namaUser}`.substring(0, 100);
+                    if (targetThread.name !== currentName) {
+                        console.log(`[INFO] Update nama thread: "${targetThread.name}" → "${currentName}"`);
+                        await targetThread.edit({ name: currentName }).catch(err => {
+                            console.warn(`[WARN] Gagal update nama thread: ${err.message}`);
+                        });
+                    }
+                }
+
+                let warnaEmbed = 0x2ecc71;
+                if (statusKirim === "IZIN") {
+                    warnaEmbed = 0xf1c40f;
+                } else if (statusKirim === "CUTI") {
+                    warnaEmbed = 0xe67e22;
+                }
+
+                // === VALIDASI & EXTRACT SEMUA GAMBAR ===
+                const imageUrls = [];
+                let hasImageUrl = false;
+
+                if (log.bukti_foto && typeof log.bukti_foto === 'string') {
+                    const urls = log.bukti_foto
+                        .split(',')
+                        .map(url => url.trim())
+                        .filter(url => isValidUrl(url));
+                    
+                    imageUrls.push(...urls);
+                    hasImageUrl = true;
+                    
+                    if (imageUrls.length > 0) {
+                        console.log(`  ✓ Ditemukan ${imageUrls.length} gambar untuk ID ${log.id}`);
+                    } else {
+                        console.log(`  ⚠ URL ditemukan tapi tidak valid untuk ID ${log.id}`);
+                    }
+                } else {
+                    console.log(`  ℹ Tidak ada gambar untuk ID ${log.id}`);
+                }
+
+                // === BUAT MAIN EMBED ===
+                const reportEmbed = new EmbedBuilder()
+                    .setTitle(`LOG KEHADIRAN - ${statusKirim}`)
+                    .setColor(warnaEmbed)
+                    .addFields(
+                        { name: 'Nama Anggota', value: namaUser, inline: true },
+                        { name: 'Pangkat', value: log.pangkat || "-", inline: true },
+                        { name: 'Divisi', value: log.divisi || "-", inline: true },
+                        { name: 'Jam Duty', value: log.jam_duty || "-", inline: true },
+                        { name: 'Kegiatan', value: log.kegiatan || "-", inline: false },
+                        { name: 'Keterangan/Alasan', value: alasanKirim, inline: false }
+                    )
+                    .setTimestamp(new Date(log.created_at))
+                    .setFooter({ text: "SASG Attendance System" });
+
+                // === TAMBAH FIELD JIKA TIDAK ADA GAMBAR ===
+                if (imageUrls.length === 0 && hasImageUrl) {
+                    reportEmbed.addFields({
+                        name: 'Bukti Gambar',
+                        value: '⚠️ File bukti tidak ditemukan di storage atau URL tidak valid.',
+                        inline: false
+                    });
+                } else if (!log.bukti_foto) {
+                    reportEmbed.addFields({
+                        name: 'Bukti Gambar',
+                        value: '⚠️ Tidak melampirkan gambar.',
+                        inline: false
+                    });
+                }
+
+                // === BUAT ARRAY EMBEDS (MAIN + IMAGE EMBEDS) ===
+                const embeds = [reportEmbed];
+
+                if (imageUrls.length > 0) {
+                    imageUrls.forEach((url, index) => {
+                        const imgEmbed = new EmbedBuilder()
+                            .setImage(url)
+                            .setColor(warnaEmbed)
+                            .setTitle(`Bukti Gambar ${index + 1}/${imageUrls.length}`)
+                            .setFooter({ text: `Image ${index + 1} dari ${imageUrls.length}` });
+                        embeds.push(imgEmbed);
+                    });
+                }
+
+                // === KIRIM SEMUA EMBEDS SEKALIGUS ===
+                try {
+                    await targetThread.send({ embeds });
+                    console.log(`[SUCCESS] Log ID ${log.id} + ${imageUrls.length} gambar terkirim ke thread: ${namaUser}`);
+                } catch (sendErr) {
+                    console.error(`  ✗ GAGAL KIRIM ID ${log.id}: ${sendErr.message}`);
+                    continue;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // === HAPUS SEMUA GAMBAR DARI STORAGE ===
+                if (imageUrls.length > 0) {
+                    for (const imageUrl of imageUrls) {
+                        try {
+                            const ambilNamaFile = imageUrl.split('/').pop();
+                            const pathLengkap = `absensi/${ambilNamaFile}`;
+                            
+                            const { error: delError } = await supabase.storage
+                                .from(STORAGE_BUCKET_NAME)
+                                .remove([pathLengkap]);
+                            
+                            if (delError) {
+                                console.warn(`  ⚠ Gagal hapus file ${ambilNamaFile}: ${delError.message}`);
+                            } else {
+                                console.log(`  ✓ File dihapus: ${ambilNamaFile}`);
+                            }
+                        } catch (storageErr) {
+                            console.warn(`  ⚠ Error hapus storage:`, storageErr.message);
+                        }
+                    }
+                }
+
+                // === ARCHIVE RECORD ===
+                try {
+                    const { error: upError } = await supabase
+                        .from('absensi_sasg')
+                        .update({ is_archived: true })
+                        .eq('id', log.id);
+
+                    if (upError) {
+                        console.error(`  ✗ Gagal archive ID ${log.id}: ${upError.message}`);
+                    } else {
+                        console.log(`  ✓ Data ID ${log.id} di-archive`);
+                    }
+                } catch (archiveErr) {
+                    console.error(`  ✗ Error archive ID ${log.id}: ${archiveErr.message}`);
+                }
+
+            } catch (errLoop) {
+                console.error(`[LOOP ERROR] Gagal memproses data ID ${log.id}:`, errLoop.message);
+            }
+        }
+        
+        console.log("[DEBUG] Selesai proses forum logs.");
+    } catch (errGlobal) {
+        console.error("[CRITICAL ERROR] processForumLogs:", errGlobal.message);
+    }
+}
+
+// --- FUNGSI PENGECEKAN ANGGOTA (REMINDER) ---
+async function checkMissingAbsence(channel) {
+    try {
+        const { data: listUser, error: errU } = await supabase.from('users_master').select('discord_id');
+        if (errU) return;
+
+        const hariIni = new Date();
+        hariIni.setHours(0, 0, 0, 0);
+
+        const { data: listAbsen, error: errA } = await supabase
+            .from('absensi_sasg')
+            .select('discord_id')
+            .gte('created_at', hariIni.toISOString());
+
+        if (errA) return;
+
+        const sudahAbsen = listAbsen.map(u => u.discord_id);
+        const belumAbsen = listUser.filter(u => !sudahAbsen.includes(u.discord_id));
+
+        if (belumAbsen.length > 0) {
+            let mentionBelum = "";
+            belumAbsen.forEach(user => {
+                mentionBelum += `<@${user.discord_id}> `;
+            });
+
+            await channel.send(`⚠️ **REMINDER ABSENSI**\nAnggota berikut belum absen hari ini:\n${mentionBelum}\n\nSilakan absen di: https://san-andreas-police-departement.netlify.app/\n@everyone`);
+        }
+    } catch (e) {
+        console.error("Reminder Error:", e.message);
+    }
+}
+
+// --- TUGAS RUTIN (SINKRONISASI & FORUM) ---
+async function runSasgTask() {
+    console.log(`\n--- [START TASK ${new Date().toLocaleString()}] ---`);
+    
+    const serverGuild = client.guilds.cache.get(DISCORD_GUILD_ID);
+    if (!serverGuild) return;
+
+    try {
+        // --- PHASE 1: CLEANUP DATA LAMA ---
+        await cleanupUsersWithoutRole(serverGuild);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        await cleanupOrphanedAbsences(serverGuild);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // --- PHASE 1B: TANDAI THREAD SEBAGAI ARCHIVED ---
+        await markThreadAsArchived(serverGuild);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // --- PHASE 2: SINKRONISASI DATA BARU ---
+        const daftarMember = await serverGuild.members.fetch();
+        const arrayDataMaster = [];
+        const idsAktif = [];
+
+        daftarMember.forEach(member => {
+            if (member.roles.cache.has(REQUIRED_ROLE_ID)) {
+                let pnk = "-";
+                let div = "-";
+
+                member.roles.cache.forEach(role => {
+                    if (PANGKAT_MAP[role.id]) pnk = PANGKAT_MAP[role.id];
+                    if (DIVISI_MAP[role.id]) div = DIVISI_MAP[role.id];
+                });
+
+                const namaDisplay = member.nickname || member.user.username;
+                idsAktif.push(member.id);
+
+                arrayDataMaster.push({
                     discord_id: member.id,
-                    nama_anggota: freshName,
-                    pangkat: userPangkat,
-                    divisi: userDivisi,
-                    is_admin: isUserAdmin, 
+                    nama_anggota: namaDisplay,
+                    pangkat: pnk,
+                    divisi: div,
+                    is_admin: member.roles.cache.has(ADMIN_ROLE_ID),
                     last_login: new Date().toISOString()
                 });
             }
+        });
+
+        // Simpan data terbaru
+        if (arrayDataMaster.length > 0) {
+            await supabase.from('users_master').upsert(arrayDataMaster, { onConflict: 'discord_id' });
+            console.log(`[SYNC] ${arrayDataMaster.length} user berhasil di-upsert`);
         }
 
-        await Promise.all(updateTasks);
+        // --- PHASE 3: PROSES FORUM ---
+        await processForumLogs(serverGuild);
 
-        if (activeDiscordIds.length > 0) {
-            await supabase.from('users_master').delete().not('discord_id', 'in', `(${activeDiscordIds.join(',')})`);
-        }
+        // --- PHASE 4: REMINDER ABSENSI ---
+        const waktuJkt = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+        const jamSekarang = waktuJkt.getHours();
+        const menitSekarang = waktuJkt.getMinutes();
 
-        const { error: upsertError } = await supabase.from('users_master').upsert(dataToUpsert, { onConflict: 'discord_id' });
-        if (upsertError) throw upsertError;
-        console.log("Sinkronisasi Berhasil.");
-
-        // --- BROADCAST & REMINDER (WIB) ---
-        const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
-        const jam = now.getHours();
-        const menit = now.getMinutes();
-
-        const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
-        if (channel) {
-            // Hanya aktif di jam 19:00 - 23:59
-            if (jam >= 19 && jam <= 23) {
-                
-                // Jika tepat jam 19:00 - 19:10 (Awal Tugas)
-                if (jam === 19 && menit <= 10) {
-                    await channel.send("📢 **REMINDER **\nWaktunya duty teman teman , jika anda memiliki kesibukan/sedang sakit silahkan ajukan izin dan cuti\nJika Cuti / Izin anda dianggap melewati batas(keseringan) maka anda akan di sp atau bahkan dikeluarkan\nLink Daftar Hadir: https://san-andreas-police-departement.netlify.app/\@everyone");
-                    await checkMissingAbsence(channel); // Langsung cek & tag orang saat itu juga
-                } 
-                
-                // Reminder tambahan jam 22:00
-                else if (jam === 22 && menit <= 10) {
-                    await channel.send("📢 **REMINDER **\nJangan lupa mengisi kehadiran sebelum hari berganti.\nLink Daftar Hadir : https://san-andreas-police-departement.netlify.app/\@everyone");
-                    await checkMissingAbsence(channel);
-                }
+        if (menitSekarang <= 10) {
+            if (jamSekarang === 19 || jamSekarang === 22) {
+                const channelAnnounce = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
+                if (channelAnnounce) await checkMissingAbsence(channelAnnounce);
             }
         }
+
+        console.log("--- [TASK COMPLETED] ---\n");
     } catch (err) {
-        console.error("Terjadi kesalahan:", err.message);
+        console.error("Main Task Error:", err.message);
     }
 }
 
-client.once('ready', () => {
-    console.log(`Bot Pengecek SASG aktif sebagai ${client.user.tag}`);
+// --- EVENT BOT READY ---
+client.once('clientReady', () => {
+    console.log("\n========================================");
+    console.log(`Bot Terhubung Sebagai: ${client.user.tag}`);
+    console.log("Status: Online & Monitoring Supabase");
+    console.log("========================================\n");
+    
     runSasgTask();
-    setInterval(runSasgTask, 600000); // Interval 10 menit
+    setInterval(runSasgTask, 600000); // Jalankan setiap 10 menit
 });
 
-process.on('SIGTERM', () => {
-    console.log("Bot dimatikan oleh sistem.");
-    process.exit(0);
-});
-
+// --- LOGIN ---
 client.login(process.env.DISCORD_BOT_TOKEN);

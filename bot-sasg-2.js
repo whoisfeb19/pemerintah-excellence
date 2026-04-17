@@ -37,7 +37,40 @@ const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376";
 const REQUIRED_ROLE_ID = "1492398964610170940";
 const ADMIN_ROLE_ID = "1492400977012068363"; // CONTOH: ID Role Chief (Sesuaikan dengan ID Role Admin/High Command kamu)
 
-// FUNGSI UTAMA PENGECEKAN
+
+// --- FUNGSI TAMBAHAN: CEK ABSENSI ---
+async function checkMissingAbsence(channel) {
+    try {
+        // Ambil semua user dari master
+        const { data: allUsers, error: errUsers } = await supabase.from('users_master').select('discord_id');
+        if (errUsers) throw errUsers;
+
+        // Ambil data absen hari ini (WIB)
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const { data: attendedToday, error: errAbsen } = await supabase
+            .from('absensi_sasg')
+            .select('discord_id')
+            .gte('created_at', startOfDay.toISOString());
+
+        if (errAbsen) throw errAbsen;
+
+        const attendedIds = attendedToday.map(u => u.discord_id);
+        const slackingUsers = allUsers.filter(u => !attendedIds.includes(u.discord_id));
+
+        if (slackingUsers.length > 0) {
+            const mentions = slackingUsers.map(u => `<@${u.discord_id}>`).join(' ');
+            await channel.send(`⚠️ **REMINDER**\nAnggota berikut belum melakukan absensi hari ini:\n${mentions}\n\nSegera lakukan absensi di: https://san-andreas-police-departement.netlify.app/\n@everyona`);
+        } else {
+            await channel.send("✅ **REMINDER**: Semua anggota sudah melakukan absensi.\n@everyone");
+        }
+    } catch (err) {
+        console.error("Gagal melakukan pengecekan absensi:", err.message);
+    }
+}
+
+// 4. FUNGSI UTAMA PENGECEKAN
 async function runSasgTask() {
     console.log(`[${new Date().toLocaleString('id-ID')}] Memulai tugas rutin SASG...`);
     
@@ -94,24 +127,27 @@ async function runSasgTask() {
         if (upsertError) throw upsertError;
         console.log("Sinkronisasi Berhasil.");
 
-        // --- BROADCAST PENGUMUMAN (WIB) ---
-        const formatter = new Intl.DateTimeFormat('id-ID', {
-            timeZone: 'Asia/Jakarta', hour: 'numeric', minute: 'numeric', hour12: false
-        });
-        
-        const formattedDate = formatter.format(new Date());
-        const [jamStr, menitStr] = formattedDate.replace('.', ':').split(':');
-        const jam = parseInt(jamStr);
-        const menit = parseInt(menitStr);
+        // --- BROADCAST & REMINDER (WIB) ---
+        const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+        const jam = now.getHours();
+        const menit = now.getMinutes();
 
         const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
         if (channel) {
-            // Cek jika jam 19:30 - 19:40 (dibatasi agar tidak spam setiap menit dalam jam tersebut)
-            if (jam === 19 && menit >= 30 && menit <= 40) { 
-                await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://exsg.netlify.app/\n\n@everyone");
-            } 
-            else if (jam === 22 && menit <= 10) {
-                await channel.send("📢 **REMINDER ABSENSI**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN DI https://exsg.netlify.app/\n\n@everyone");
+            // Hanya aktif di jam 19:00 - 23:59
+            if (jam >= 19 && jam <= 23) {
+                
+                // Jika tepat jam 19:00 - 19:10 (Awal Tugas)
+                if (jam === 19 && menit <= 10) {
+                    await channel.send("📢 **REMINDER **\nWaktunya duty teman teman , jika anda memiliki kesibukan/sedang sakit silahkan ajukan izin dan cuti\nJika Cuti / Izin anda dianggap melewati batas(keseringan) maka anda akan di sp atau bahkan dikeluarkan\nLink Daftar Hadir: https://san-andreas-police-departement.netlify.app/\@everyone");
+                    await checkMissingAbsence(channel); // Langsung cek & tag orang saat itu juga
+                } 
+                
+                // Reminder tambahan jam 22:00
+                else if (jam === 22 && menit <= 10) {
+                    await channel.send("📢 **REMINDER **\nJangan lupa mengisi kehadiran sebelum hari berganti.\nLink Daftar Hadir : https://san-andreas-police-departement.netlify.app/\@everyone");
+                    await checkMissingAbsence(channel);
+                }
             }
         }
     } catch (err) {
@@ -121,17 +157,10 @@ async function runSasgTask() {
 
 client.once('ready', () => {
     console.log(`Bot Pengecek SASG aktif sebagai ${client.user.tag}`);
-    
-    // Jalankan tugas pertama kali saat bot nyala
     runSasgTask();
-
-    // Jalankan tugas SETIAP 10 MENIT selama bot standby (6 jam)
-    setInterval(() => {
-        runSasgTask();
-    }, 600000); // 600.000 ms = 10 menit
+    setInterval(runSasgTask, 600000); // Interval 10 menit
 });
 
-// Menangkap sinyal berhenti agar tidak error di log
 process.on('SIGTERM', () => {
     console.log("Bot dimatikan oleh sistem.");
     process.exit(0);
