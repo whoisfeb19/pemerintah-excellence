@@ -32,14 +32,137 @@ const DIVISI_MAP = {
     "1444921352120434819": "INTERNAL AFFAIRS DIVISION"
 };
 
-// ID Channel untuk pengumuman
+// ID Channel untuk pengumuman dan logs
 const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376"; 
+const LOG_CHANNEL_ID = "YOUR_LOG_CHANNEL_ID"; // GANTI DENGAN ID CHANNEL LOGS KEHADIRAN
 const REQUIRED_ROLE_ID = "1492398964610170940";
-const ADMIN_ROLE_ID = "1492400977012068363"; // CONTOH: ID Role Chief (Sesuaikan dengan ID Role Admin/High Command kamu)
+const ADMIN_ROLE_ID = "1492400977012068363";
 
-// FUNGSI UTAMA PENGECEKAN
+// ===== FUNGSI LOGGING =====
+async function sendLog(message, type = 'info') {
+    try {
+        const channel = await client.channels.fetch(LOG_CHANNEL_ID);
+        if (!channel) {
+            console.warn("Channel logs tidak ditemukan!");
+            return;
+        }
+
+        const timestamp = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        const emoji = type === 'delete' ? '🗑️' : type === 'warning' ? '⚠️' : 'ℹ️';
+        
+        await channel.send(`${emoji} **[${timestamp}]** ${message}`);
+    } catch (err) {
+        console.error("Gagal mengirim log:", err.message);
+    }
+}
+
+// ===== FUNGSI PENGECEKAN & PENGHAPUSAN DATA =====
+/**
+ * Menghapus data user ketika user tidak memiliki required role
+ */
+async function checkAndDeleteUserWithoutRequiredRole(guild) {
+    console.log("🔍 Memeriksa users tanpa required role...");
+    
+    try {
+        const { data: allUsers, error: fetchError } = await supabase
+            .from('users_master')
+            .select('discord_id, nama_anggota');
+        
+        if (fetchError) throw fetchError;
+        
+        const members = await guild.members.fetch();
+        let deletedCount = 0;
+
+        for (const user of allUsers) {
+            const member = members.get(user.discord_id);
+            
+            // Jika member tidak ditemukan atau tidak memiliki required role
+            if (!member || !member.roles.cache.has(REQUIRED_ROLE_ID)) {
+                // Hapus dari users_master
+                await supabase.from('users_master').delete().eq('discord_id', user.discord_id);
+                
+                // Hapus dari absensi_sasg
+                await supabase.from('absensi_sasg').delete().eq('discord_id', user.discord_id);
+                
+                deletedCount++;
+                await sendLog(
+                    `Dihapus: **${user.nama_anggota}** (ID: ${user.discord_id}) - Tidak memiliki required role`,
+                    'delete'
+                );
+                console.log(`✓ Dihapus: ${user.nama_anggota}`);
+            }
+        }
+
+        if (deletedCount > 0) {
+            console.log(`Total dihapus: ${deletedCount} users`);
+        } else {
+            console.log("Tidak ada users yang perlu dihapus.");
+        }
+    } catch (err) {
+        console.error("Error saat checking users:", err.message);
+        await sendLog(`❌ Error saat pengecekan users: ${err.message}`, 'warning');
+    }
+}
+
+/**
+ * Menghapus data orphaned di absensi_sasg (data yang usernya tidak ada di users_master atau di Discord)
+ */
+async function cleanupOrphanedAttendanceData(guild) {
+    console.log("🔍 Membersihkan data orphaned di absensi_sasg...");
+    
+    try {
+        const members = await guild.members.fetch();
+        const { data: allAttendance, error: fetchError } = await supabase
+            .from('absensi_sasg')
+            .select('discord_id, nama_anggota');
+        
+        if (fetchError) throw fetchError;
+
+        const { data: allUsers, error: usersError } = await supabase
+            .from('users_master')
+            .select('discord_id');
+        
+        if (usersError) throw usersError;
+
+        const validUserIds = allUsers.map(u => u.discord_id);
+        let orphanedCount = 0;
+
+        for (const attendance of allAttendance) {
+            const userExists = validUserIds.includes(attendance.discord_id);
+            const memberInDiscord = members.has(attendance.discord_id);
+            const hasRequiredRole = memberInDiscord && members.get(attendance.discord_id).roles.cache.has(REQUIRED_ROLE_ID);
+
+            // Hapus jika: user tidak ada di users_master ATAU member tidak ada di Discord ATAU tidak punya required role
+            if (!userExists || !memberInDiscord || !hasRequiredRole) {
+                await supabase.from('absensi_sasg').delete().eq('discord_id', attendance.discord_id);
+                orphanedCount++;
+                
+                const reason = !userExists ? "User tidak ada di master" : 
+                             !memberInDiscord ? "User tidak ada di Discord" : 
+                             "User tidak memiliki required role";
+                
+                await sendLog(
+                    `Dihapus orphaned data: **${attendance.nama_anggota}** (ID: ${attendance.discord_id}) - ${reason}`,
+                    'delete'
+                );
+                console.log(`✓ Dihapus orphaned: ${attendance.nama_anggota}`);
+            }
+        }
+
+        if (orphanedCount > 0) {
+            console.log(`Total orphaned data dihapus: ${orphanedCount}`);
+        } else {
+            console.log("Tidak ada orphaned data yang perlu dihapus.");
+        }
+    } catch (err) {
+        console.error("Error saat cleanup orphaned data:", err.message);
+        await sendLog(`❌ Error saat cleanup orphaned: ${err.message}`, 'warning');
+    }
+}
+
+// ===== FUNGSI UTAMA PENGECEKAN =====
 async function runSasgTask() {
-    console.log(`[${new Date().toLocaleString('id-ID')}] Memulai tugas rutin SASG...`);
+    console.log(`\n[${new Date().toLocaleString('id-ID')}] Memulai tugas rutin SASG...`);
     
     const guild = client.guilds.cache.get(process.env.DISCORD_GUILD_ID);
     if (!guild) return console.error("Error: Server Discord tidak ditemukan!");
@@ -92,7 +215,15 @@ async function runSasgTask() {
 
         const { error: upsertError } = await supabase.from('users_master').upsert(dataToUpsert, { onConflict: 'discord_id' });
         if (upsertError) throw upsertError;
-        console.log("Sinkronisasi Berhasil.");
+        
+        console.log("✓ Sinkronisasi Data Berhasil");
+        await sendLog("✓ Sinkronisasi data users_master berhasil");
+
+        // --- PENGECEKAN USERS TANPA REQUIRED ROLE ---
+        await checkAndDeleteUserWithoutRequiredRole(guild);
+
+        // --- PEMBERSIHAN ORPHANED DATA ---
+        await cleanupOrphanedAttendanceData(guild);
 
         // --- BROADCAST PENGUMUMAN (WIB) ---
         const formatter = new Intl.DateTimeFormat('id-ID', {
@@ -106,7 +237,6 @@ async function runSasgTask() {
 
         const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
         if (channel) {
-            // Cek jika jam 19:30 - 19:40 (dibatasi agar tidak spam setiap menit dalam jam tersebut)
             if (jam === 19 && menit >= 30 && menit <= 40) { 
                 await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://exsg.netlify.app/\n\n@everyone");
             } 
@@ -114,18 +244,23 @@ async function runSasgTask() {
                 await channel.send("📢 **REMINDER ABSENSI**\nJANGAN LUPA UNTUK MENGISI KEHADIRAN DI https://exsg.netlify.app/\n\n@everyone");
             }
         }
+
+        await sendLog("✓ Task SASG selesai");
+        console.log("✓ Task SASG selesai\n");
     } catch (err) {
-        console.error("Terjadi kesalahan:", err.message);
+        console.error("❌ Terjadi kesalahan:", err.message);
+        await sendLog(`❌ Error: ${err.message}`, 'warning');
     }
 }
 
 client.once('ready', () => {
-    console.log(`Bot Pengecek SASG aktif sebagai ${client.user.tag}`);
+    console.log(`\n🤖 Bot Pengecek SASG aktif sebagai ${client.user.tag}`);
+    console.log("📋 Fitur yang aktif: Sync, Role Checking, Orphaned Data Cleanup, Auto Logging\n");
     
     // Jalankan tugas pertama kali saat bot nyala
     runSasgTask();
 
-    // Jalankan tugas SETIAP 10 MENIT selama bot standby (6 jam)
+    // Jalankan tugas SETIAP 10 MENIT selama bot standby
     setInterval(() => {
         runSasgTask();
     }, 600000); // 600.000 ms = 10 menit
@@ -133,7 +268,7 @@ client.once('ready', () => {
 
 // Menangkap sinyal berhenti agar tidak error di log
 process.on('SIGTERM', () => {
-    console.log("Bot dimatikan oleh sistem.");
+    console.log("🛑 Bot dimatikan oleh sistem.");
     process.exit(0);
 });
 
