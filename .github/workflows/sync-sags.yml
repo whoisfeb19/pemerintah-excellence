@@ -1,36 +1,36 @@
 name: SASG Member Sync
-
 concurrency:
   group: sasg-bot-group
-  cancel-in-progress: false
-
+  cancel-in-progress: true
+  
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # Berjalan setiap 30 menit
+    - cron: '*/30 * * * *'
+  # Memungkinkan Anda menjalankan manual melalui tab "Actions"
   workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          # ✅ HAPUS cache line - tidak perlu lock file
+          node-version: '18'
 
       - name: Install Dependencies
-        run: npm install  # ✅ Ini saja, simple!
+        run: npm install
 
-      - name: Run SASG Bot
+      - name: Run Both Bots
+        # GANTI BAGIAN INI: Memanggil npm start agar menjalankan kedua file sekaligus
         run: node bot-sasg.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          BOT_TYPE: sasg
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
