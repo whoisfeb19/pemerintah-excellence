@@ -37,14 +37,14 @@ const ANNOUNCEMENT_CHANNEL_ID = "1492401243476197376";
 const LOG_CHANNEL_ID = "1494352421294444595";
 const REQUIRED_ROLE_ID = "1492398964610170940";
 const ADMIN_ROLE_ID = "1492400977012068363";
-const DISCORD_GUILD_ID = "1391854057487863998"; // GANTI DENGAN GUILD ID ANDA
+const DISCORD_GUILD_ID = "1391854057487863998";
 
 // ===== FUNGSI LOGGING =====
 async function sendLog(message, type = 'info') {
     try {
         const channel = await client.channels.fetch(LOG_CHANNEL_ID);
-        if (!channel) {
-            console.warn("⚠️ Channel logs tidak ditemukan!");
+        if (!channel || !channel.isTextBased()) {
+            console.warn("⚠️ Channel logs tidak ditemukan atau bukan text channel!");
             return;
         }
 
@@ -243,12 +243,12 @@ async function runSasgTask() {
 
         await Promise.all(updateTasks);
 
-        // Hapus users yang tidak lagi punya required role
+        // Hapus users yang tidak lagi punya required role (FIX: TANPA KUTIP)
         if (activeDiscordIds.length > 0) {
             const { error: deleteError } = await supabase
                 .from('users_master')
                 .delete()
-                .not('discord_id', 'in', `(${activeDiscordIds.map(id => `'${id}'`).join(',')})`);
+                .not('discord_id', 'in', `(${activeDiscordIds.join(',')})`);
             
             if (deleteError) throw deleteError;
         }
@@ -276,7 +276,7 @@ async function runSasgTask() {
         const menit = parseInt(menitStr);
 
         const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
-        if (channel) {
+        if (channel && channel.isTextBased()) {
             if (jam === 19 && menit >= 30 && menit <= 40) { 
                 await channel.send("📢 **PENGUMUMAN DUTY**\nWAKTUNYA DUTY JIKA BERHALANGAN SILAHKAN IZIN ATAU CUTI DI https://exsg.netlify.app/\n\n@everyone");
             } 
