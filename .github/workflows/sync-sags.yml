@@ -1,35 +1,93 @@
-name: SASG Member Sync
+name: SASG Bot - Production
+
 concurrency:
-  group: sasg-bot-group
-  cancel-in-progress: true
+  group: sasg-bot-prod
+  cancel-in-progress: false
 
 on:
   schedule:
-    # Berjalan setiap jam (menit ke-0)
-    - cron: '*/30 * * * *'
-  # Memungkinkan Anda menjalankan manual melalui tab "Actions"
+    # Jalankan setiap 10 menit
+    - cron: '0,10,20,30,40,50 * * * *'
   workflow_dispatch:
+  
+  # Jalankan otomatis saat ada push ke main branch
+  push:
+    branches:
+      - main
+    paths:
+      - 'bot-sasg.js'
+      - '.github/workflows/sasg-bot-production.yml'
 
 jobs:
-  sync:
+  sasg-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
+    
+    strategy:
+      max-parallel: 1  # ✅ PENTING: Hanya 1 job berjalan untuk avoid conflicts
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
         with:
-          node-version: '18'
+          fetch-depth: 1
 
-      - name: Install Dependencies
-        run: npm install
+      - name: 📦 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Run Sync Script
-        run: node bot-sasg.js # GANTI dengan nama file .js Anda
+      - name: 🔧 Install Dependencies
+        run: npm ci --prefer-offline --no-audit
+        timeout-minutes: 3
+
+      - name: ✅ Validate Environment
+        run: |
+          if [ -z "$DISCORD_BOT_TOKEN" ]; then
+            echo "❌ DISCORD_BOT_TOKEN is not set!"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "❌ SUPABASE_URL is not set!"
+            exit 1
+          fi
+          echo "✅ All environment variables are set"
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+
+      - name: 🤖 Run SASG Bot Sync
+        run: |
+          echo "🚀 Starting bot sync at $(date)"
+          timeout 300 node bot-sasg.js || {
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "⚠️  Bot sync timed out after 5 minutes"
+            else
+              echo "❌ Bot sync failed with exit code $EXIT_CODE"
+            fi
+            exit 1
+          }
+          echo "✅ Bot sync completed at $(date)"
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+          BOT_TYPE: sasg
+          NODE_ENV: production
+
+      - name: 📊 Log Completion
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ SASG Bot Job Completed Successfully"
+          else
+            echo "❌ SASG Bot Job Failed - Check logs above"
+          fi
+
+      - name: 🔔 Notify Discord on Failure
+        if: failure()
+        run: |
+          # Optional: Send webhook to Discord
+          echo "Could implement Discord webhook here for notifications"
