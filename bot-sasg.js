@@ -52,7 +52,6 @@ const DIVISI_MAP = {
     "1444921352120434819": "INTERNAL AFFAIRS DIVISION"
 };
 
-
 // ✅ FUNGSI RETRY DENGAN EXPONENTIAL BACKOFF ---
 async function withRetry(fn, maxRetries = 3, initialDelay = 1000) {
     let lastError;
@@ -297,7 +296,53 @@ async function markThreadAsArchived(guild) {
     }
 }
 
-// ✅ FUNGSI PROCESS FORUM LOGS ---
+// ✅ FUNGSI VALIDASI GAMBAR DI STORAGE ---
+async function isImageExistsInStorage(imageUrl) {
+    try {
+        if (!imageUrl || !isValidUrl(imageUrl)) {
+            return false;
+        }
+
+        // Extract nama file dari URL
+        const namaFile = imageUrl.split('/').pop();
+        if (!namaFile) {
+            console.warn(`[STORAGE] Gagal extract nama file dari: ${imageUrl}`);
+            return false;
+        }
+
+        // List files di storage untuk check keberadaan
+        const { data: files, error: listErr } = await supabase
+            .storage
+            .from(STORAGE_BUCKET_NAME)
+            .list('absensi', {
+                limit: 100,
+                offset: 0,
+                sortBy: { column: 'name', order: 'asc' }
+            });
+
+        if (listErr) {
+            console.warn(`[STORAGE] Error list files: ${listErr.message}`);
+            return false;
+        }
+
+        // Check apakah file ada di storage
+        const fileExists = files && files.some(f => f.name === namaFile);
+        
+        if (!fileExists) {
+            console.log(`[STORAGE] File tidak ditemukan: ${namaFile}`);
+            return false;
+        }
+
+        console.log(`[STORAGE] File ditemukan: ${namaFile}`);
+        return true;
+
+    } catch (err) {
+        console.warn(`[STORAGE] Error check file: ${err.message}`);
+        return false;
+    }
+}
+
+// ✅ FUNGSI PROCESS FORUM LOGS (DENGAN VALIDASI STORAGE) ---
 async function processForumLogs(guild) {
     console.log("\n[PROCESS-FORUM] ========== MULAI PROCESS FORUM LOGS ==========");
     
@@ -346,11 +391,39 @@ async function processForumLogs(guild) {
                 if (statusKirim === "IZIN") warnaEmbed = 0xf1c40f;
                 else if (statusKirim === "CUTI") warnaEmbed = 0xe67e22;
 
-                const imageUrls = [];
-                if (log.bukti_foto && isValidUrl(log.bukti_foto)) {
-                    imageUrls.push(log.bukti_foto);
+                // ✅ PERBAIKAN: Validasi gambar dengan lebih detail
+                let statusGambar = "❌ Tidak melampirkan gambar";
+                let buktiGambarUrl = null;
+                let alasanGambarTidakAda = "";
+
+                if (log.bukti_foto && typeof log.bukti_foto === 'string' && log.bukti_foto.trim().length > 0) {
+                    console.log(`  ℹ Bukti foto field: ${log.bukti_foto.substring(0, 50)}...`);
+                    
+                    // ✅ Step 1: Check URL format
+                    if (!isValidUrl(log.bukti_foto)) {
+                        statusGambar = "⚠️ Format URL gambar tidak valid";
+                        alasanGambarTidakAda = `URL: ${log.bukti_foto.substring(0, 30)}...`;
+                        console.log(`  ⚠ URL format tidak valid`);
+                    } else {
+                        // ✅ Step 2: Check file ada di storage
+                        const fileExists = await isImageExistsInStorage(log.bukti_foto);
+                        
+                        if (fileExists) {
+                            statusGambar = "✅ Gambar tersedia";
+                            buktiGambarUrl = log.bukti_foto;
+                            console.log(`  ✓ Gambar valid dan ada di storage`);
+                        } else {
+                            statusGambar = "⚠️ Gambar tidak tersedia di storage (sudah dihapus)";
+                            alasanGambarTidakAda = "File telah dihapus dari server";
+                            console.log(`  ⚠ Gambar tidak ada di storage`);
+                        }
+                    }
+                } else {
+                    statusGambar = "❌ Tidak melampirkan gambar";
+                    console.log(`  ℹ Tidak ada bukti foto`);
                 }
 
+                // ✅ Main embed dengan informasi lengkap
                 const reportEmbed = new EmbedBuilder()
                     .setTitle(`LOG KEHADIRAN - ${statusKirim}`)
                     .setColor(warnaEmbed)
@@ -359,47 +432,92 @@ async function processForumLogs(guild) {
                         { name: 'Pangkat', value: log.pangkat || "-", inline: true },
                         { name: 'Divisi', value: log.divisi || "-", inline: true },
                         { name: 'Keterangan', value: alasanKirim, inline: false }
-                    )
-                    .setTimestamp(new Date(log.created_at))
-                    .setFooter({ text: "SASG Attendance System" });
+                    );
 
-                const embeds = [reportEmbed];
-                if (imageUrls.length > 0) {
-                    imageUrls.forEach((url, index) => {
-                        embeds.push(new EmbedBuilder().setImage(url).setColor(warnaEmbed));
+                // ✅ Tambah field untuk status bukti gambar
+                if (statusGambar.includes('✅')) {
+                    // Jika gambar tersedia
+                    reportEmbed.addFields({
+                        name: '📸 Status Bukti Gambar',
+                        value: statusGambar,
+                        inline: false
+                    });
+                } else {
+                    // Jika gambar tidak tersedia atau format salah
+                    let deskripsi = statusGambar;
+                    if (alasanGambarTidakAda) {
+                        deskripsi += `\n📌 Alasan: ${alasanGambarTidakAda}`;
+                    }
+                    reportEmbed.addFields({
+                        name: '📸 Status Bukti Gambar',
+                        value: deskripsi,
+                        inline: false
                     });
                 }
 
-                await targetThread.send({ embeds });
-                console.log(`  ✓ Log terkirim`);
+                reportEmbed
+                    .setTimestamp(new Date(log.created_at))
+                    .setFooter({ text: "SASG Attendance System" });
 
-                // Hapus gambar dari storage
-                if (imageUrls.length > 0) {
-                    for (const url of imageUrls) {
-                        try {
-                            const namaFile = url.split('/').pop();
-                            await supabase.storage.from(STORAGE_BUCKET_NAME).remove([`absensi/${namaFile}`]);
-                            console.log(`  ✓ File dihapus: ${namaFile}`);
-                        } catch (storageErr) {
-                            console.warn(`  ⚠ Error hapus storage: ${storageErr.message}`);
-                        }
+                // ✅ Array embeds - selalu ada report embed
+                const embeds = [reportEmbed];
+                
+                // ✅ Jika gambar valid dan ada, tambahkan sebagai embed terpisah
+                if (buktiGambarUrl) {
+                    try {
+                        const imgEmbed = new EmbedBuilder()
+                            .setImage(buktiGambarUrl)
+                            .setColor(warnaEmbed)
+                            .setTitle('📸 Bukti Gambar Kehadiran')
+                            .setFooter({ text: `Ukuran: Original | Format: Auto` });
+                        embeds.push(imgEmbed);
+                        console.log(`  ✓ Image embed ditambahkan`);
+                    } catch (embedErr) {
+                        console.warn(`  ⚠ Error create image embed: ${embedErr.message}`);
                     }
                 }
 
-                // Archive record
-                await supabase.from('absensi_sasg').update({ is_archived: true }).eq('id', log.id);
-                console.log(`  ✓ Data di-archive`);
+                // ✅ Send ke thread - TETAP TERKIRIM MESKIPUN GAMBAR TIDAK ADA
+                try {
+                    await targetThread.send({ embeds });
+                    console.log(`  ✓ Log terkirim ke thread (${embeds.length} embeds)`);
+
+                    // ✅ Hapus gambar dari storage HANYA jika valid dan ada
+                    if (buktiGambarUrl) {
+                        try {
+                            const namaFile = buktiGambarUrl.split('/').pop();
+                            await supabase.storage.from(STORAGE_BUCKET_NAME).remove([`absensi/${namaFile}`]);
+                            console.log(`  ✓ File dihapus dari storage: ${namaFile}`);
+                        } catch (storageErr) {
+                            console.warn(`  ⚠ Error hapus storage: ${storageErr.message}`);
+                        }
+                    } else {
+                        console.log(`  ℹ File tidak dihapus (tidak valid atau sudah dihapus)`);
+                    }
+
+                    // Archive record HANYA jika berhasil terkirim
+                    await supabase.from('absensi_sasg').update({ is_archived: true }).eq('id', log.id);
+                    console.log(`  ✓ Data di-archive ke database`);
+
+                } catch (sendErr) {
+                    console.error(`  ✗ Error send ke thread: ${sendErr.message}`);
+                    console.error(`     Stack: ${sendErr.stack}`);
+                    continue; // Skip ke log berikutnya jika gagal send
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
             } catch (errLoop) {
                 console.error(`[ERROR] Gagal proses log ${log.id}: ${errLoop.message}`);
+                console.error(`  Stack: ${errLoop.stack}`);
+                continue; // Lanjut ke log berikutnya
             }
-
-            await new Promise(resolve => setTimeout(resolve, 2000));
         }
         
         console.log("[PROCESS-FORUM] ========== SELESAI ==========\n");
     } catch (err) {
         console.error("[PROCESS-FORUM ERROR]", err.message);
+        console.error(`Stack: ${err.stack}`);
     }
 }
 
