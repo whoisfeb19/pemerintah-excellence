@@ -651,7 +651,7 @@ async function checkMissingAbsence(channel) {
                 mentionBelum += `<@${user.discord_id}> `;
             });
 
-            await channel.send(`⚠️ **REMINDER ABSENSI**\nAnggota berikut belum absen hari ini:\n${mentionBelum}\n\nSilakan absen di: https://san-andreas-police-departement.netlify.app/\n@everyone`);
+            await channel.send(`⚠️ **REMINDER ABSENSI**\nAnggota berikut belum absen hari ini:\n${mentionBelum}\n\nSilakan absen di: https://exsg.netlify.app//\n@everyone`);
         }
     } catch (e) {
         console.error("Reminder Error:", e.message);
