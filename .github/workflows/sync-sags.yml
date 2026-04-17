@@ -28,7 +28,7 @@ jobs:
         run: npm install  # ✅ Ini saja, simple!
 
       - name: Run SASG Bot
-        run: node bot-sasg-fixed.js
+        run: node bot-sasg.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
