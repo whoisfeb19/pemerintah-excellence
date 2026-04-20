@@ -169,7 +169,7 @@ async function cleanupUsersWithoutRole(guild) {
 
                     // 2A. HAPUS GAMBAR BUKTI DARI STORAGE
                     const { data: absenRecords, error: absenErr } = await supabase
-                        .from('absensi_sapd')
+                        .from('absensi_sasg')
                         .select('id, bukti_foto')
                         .eq('discord_id', discordId);
 
@@ -198,7 +198,7 @@ async function cleanupUsersWithoutRole(guild) {
 
                     // 2B. HAPUS SEMUA DATA ABSENSI USER
                     const { error: delAbsenErr } = await supabase
-                        .from('absensi_sapd')
+                        .from('absensi_sasg')
                         .delete()
                         .eq('discord_id', discordId);
 
@@ -254,7 +254,7 @@ async function cleanupOrphanedAbsences(guild) {
 
         // 2. AMBIL SEMUA DATA DI absensi_sapd
         const { data: allAbsences, error: fetchAbsenErr } = await supabase
-            .from('absensi_sapd')
+            .from('absensi_sasg')
             .select('id, discord_id, bukti_foto');
 
         if (fetchAbsenErr) {
@@ -307,7 +307,7 @@ async function cleanupOrphanedAbsences(guild) {
 
                     // 3B. HAPUS DATA ABSENSI
                     const { error: delAbsenErr } = await supabase
-                        .from('absensi_sapd')
+                        .from('absensi_sasg')
                         .delete()
                         .eq('id', absenceRecord.id);
 
@@ -418,7 +418,7 @@ async function processForumLogs(guild) {
         }
 
         const { data: logs, error: fetchError } = await supabase
-            .from('absensi_sapd')
+            .from('absensi_sasg')
             .select('*')
             .eq('is_archived', false);
 
@@ -601,7 +601,7 @@ async function processForumLogs(guild) {
                 // === ARCHIVE RECORD ===
                 try {
                     const { error: upError } = await supabase
-                        .from('absensi_sapd')
+                        .from('absensi_sasg')
                         .update({ is_archived: true })
                         .eq('id', log.id);
 
@@ -636,7 +636,7 @@ async function checkMissingAbsence(channel) {
         hariIni.setHours(0, 0, 0, 0);
 
         const { data: listAbsen, error: errA } = await supabase
-            .from('absensi_sapd')
+            .from('absensi_sasg')
             .select('discord_id')
             .gte('created_at', hariIni.toISOString());
 
